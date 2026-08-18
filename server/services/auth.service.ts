@@ -8,7 +8,17 @@ export function serializeUser(user: IUserDocument) {
   return {
     id: user._id.toString(),
     name: user.name,
+    lastName: user.lastName,
     email: user.email,
+    phone: user.phone,
+    avatarUrl: user.avatarDriveFileId
+      ? `/api/profile/avatar?v=${user.updatedAt.getTime()}`
+      : user.avatarUrl,
+    eventName: user.eventName,
+    eventDescription: user.eventDescription,
+    eventDate: user.eventDate,
+    location: user.location,
+    publicSlug: user.publicSlug,
     role: user.role,
     status: user.status,
     createdAt: user.createdAt,

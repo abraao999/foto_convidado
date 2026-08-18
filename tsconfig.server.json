@@ -9,6 +9,5 @@
     "esModuleInterop": true,
     "skipLibCheck": true
   },
-  "include": ["server", "server.ts", "api"],
-  "typeRoots": ["./node_modules/@types", "./server/types"]
+  "include": ["server", "server.ts", "api"]
 }

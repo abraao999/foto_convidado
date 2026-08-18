@@ -50,9 +50,9 @@ export async function createCheckoutPreference(input: {
       metadata: { local_payment_id: input.localPaymentId },
       notification_url: `${baseUrl}/api/payments/webhook`,
       back_urls: {
-        success: `${baseUrl}/assinatura?checkout=success`,
-        pending: `${baseUrl}/assinatura?checkout=pending`,
-        failure: `${baseUrl}/assinatura?checkout=failure`,
+        success: `${baseUrl}/pagamento?checkout=success`,
+        pending: `${baseUrl}/pagamento?checkout=pending`,
+        failure: `${baseUrl}/pagamento?checkout=failure`,
       },
       auto_return: 'approved',
       statement_descriptor: 'FOTO GALERIA',

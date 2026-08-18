@@ -17,12 +17,12 @@ const upload = multer({
     callback(null, file.mimetype.startsWith('image/') || file.mimetype.startsWith('video/')),
 });
 
-function oauthClient() {
+function oauthClient(redirectUri?: string) {
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
   if (!clientId || !clientSecret) throw new Error('A autenticação do Google ainda não está configurada no servidor.');
-  const publicUrl = process.env.PUBLIC_URL ?? 'http://localhost:3001';
-  return new google.auth.OAuth2(clientId, clientSecret, `${publicUrl}/api/google-auth-callback`);
+  const fallbackUrl = `${(process.env.PUBLIC_URL ?? 'http://localhost:3001').replace(/\/$/, '')}/api/google-auth-callback`;
+  return new google.auth.OAuth2(clientId, clientSecret, redirectUri ?? fallbackUrl);
 }
 
 function driveClient() {
@@ -34,9 +34,10 @@ function driveClient() {
   return { drive: google.drive({ version: 'v3', auth }), folderId };
 }
 
-router.get('/google-auth', (_request: Request, response: Response) => {
+router.get('/google-auth', (request: Request, response: Response) => {
   try {
-    const auth = oauthClient();
+    const redirectUri = `${request.protocol}://${request.get('host')}/api/google-auth-callback`;
+    const auth = oauthClient(redirectUri);
     response.redirect(
       auth.generateAuthUrl({
         access_type: 'offline',
@@ -53,7 +54,8 @@ router.get('/google-auth-callback', async (request: Request, response: Response)
   const code = typeof request.query.code === 'string' ? request.query.code : undefined;
   if (!code) return response.status(400).send('A autorização foi cancelada ou não retornou um código.');
   try {
-    const auth = oauthClient();
+    const redirectUri = `${request.protocol}://${request.get('host')}/api/google-auth-callback`;
+    const auth = oauthClient(redirectUri);
     const { tokens } = await auth.getToken(code);
     if (!tokens.refresh_token) throw new Error('O Google não retornou um refresh token. Tente novamente.');
     response

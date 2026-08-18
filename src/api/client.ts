@@ -1,10 +1,19 @@
 import type { SubscriptionInfo, SubscriptionSummary } from '../types/subscription';
 import type { PaymentInfo } from '../types/payment';
+import type { GalleryInfo } from '../types/gallery';
 
 export interface AuthUser {
   id: string;
   name: string;
+  lastName?: string;
   email: string;
+  phone?: string;
+  avatarUrl?: string;
+  eventName?: string;
+  eventDescription?: string;
+  eventDate?: string;
+  location?: string;
+  publicSlug?: string;
   role: 'USER' | 'ADMIN';
   status: 'ACTIVE' | 'BLOCKED';
   createdAt: string;
@@ -17,11 +26,12 @@ interface ApiError {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const isFormData = init?.body instanceof FormData;
   const response = await fetch(path, {
     ...init,
     credentials: 'include',
     headers: {
-      'Content-Type': 'application/json',
+      ...(!isFormData ? { 'Content-Type': 'application/json' } : {}),
       ...(init?.headers ?? {}),
     },
   });
@@ -55,6 +65,40 @@ export const api = {
 
   changePassword: (body: { currentPassword: string; newPassword: string }) =>
     request<{ user: AuthUser; message: string }>('/api/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  updateProfile: (body: {
+    name: string;
+    lastName?: string;
+    phone?: string;
+  }) =>
+    request<{ user: AuthUser; message: string }>('/api/profile', {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    }),
+
+  uploadAvatar: (file: File) => {
+    const body = new FormData();
+    body.append('avatar', file);
+    return request<{ user: AuthUser; message: string }>(
+      '/api/profile/avatar',
+      { method: 'POST', body }
+    );
+  },
+
+  getGalleries: () =>
+    request<{ galleries: GalleryInfo[] }>('/api/galleries'),
+
+  createGallery: (body: {
+    title: string;
+    description?: string;
+    slug?: string;
+    eventDate?: string;
+    location?: string;
+  }) =>
+    request<{ gallery: GalleryInfo; message: string }>('/api/galleries', {
       method: 'POST',
       body: JSON.stringify(body),
     }),
