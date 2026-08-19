@@ -16,6 +16,18 @@ export const platformConfig = {
     5 * 1024 ** 3
   ),
 
+  /** Tamanho máximo por foto (25 MB padrão). */
+  maxPhotoBytes: parseEnvInt(
+    process.env.UPLOAD_MAX_PHOTO_BYTES,
+    25 * 1024 * 1024
+  ),
+
+  /** Tamanho de cada pedaço no envio resumível. */
+  uploadChunkBytes: parseEnvInt(
+    process.env.UPLOAD_CHUNK_BYTES,
+    2 * 1024 * 1024
+  ),
+
   /** Dias após expiração em que a galeria pública continua visível */
   publicGalleryGraceDays: Number(process.env.PUBLIC_GALLERY_GRACE_DAYS ?? 30),
 

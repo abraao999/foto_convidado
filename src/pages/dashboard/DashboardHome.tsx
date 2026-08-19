@@ -3,18 +3,29 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../api/client';
 import SubscriptionAlertBanner from '../../components/SubscriptionAlert';
-import { formatDate, type SubscriptionSummary } from '../../types/subscription';
+import {
+  formatDate,
+  formatStorage,
+  type SubscriptionSummary,
+} from '../../types/subscription';
+import type { PhotoStats } from '../../types/photo';
 
 export default function DashboardHome() {
   const { user } = useAuth();
   const [summary, setSummary] = useState<SubscriptionSummary | null>(null);
   const [galleryCount, setGalleryCount] = useState(0);
+  const [photoStats, setPhotoStats] = useState<PhotoStats | null>(null);
 
   useEffect(() => {
-    Promise.all([api.getSubscriptionSummary(), api.getGalleries()])
-      .then(([subscription, galleryResult]) => {
+    Promise.all([
+      api.getSubscriptionSummary(),
+      api.getGalleries(),
+      api.getPhotoStats(),
+    ])
+      .then(([subscription, galleryResult, photos]) => {
         setSummary(subscription);
         setGalleryCount(galleryResult.galleries.length);
+        setPhotoStats(photos);
       })
       .catch(() => setSummary(null));
   }, []);
@@ -38,12 +49,12 @@ export default function DashboardHome() {
       <section className="metric-grid">
         <article className="metric-card">
           <span>Fotos</span>
-          <strong>0</strong>
+          <strong>{photoStats?.count ?? 0}</strong>
           <small>Fotos armazenadas</small>
         </article>
         <article className="metric-card">
           <span>Armazenamento</span>
-          <strong>0 MB</strong>
+          <strong>{formatStorage(photoStats?.totalBytes ?? 0)}</strong>
           <small>
             de{' '}
             {summary

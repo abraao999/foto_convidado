@@ -7,7 +7,9 @@ import authRoutes from './routes/auth.routes.js';
 import galleriesRoutes from './routes/galleries.routes.js';
 import legacyRoutes from './routes/legacy.routes.js';
 import paymentsRoutes from './routes/payments.routes.js';
+import photosRoutes from './routes/photos.routes.js';
 import profileRoutes from './routes/profile.routes.js';
+import publicRoutes from './routes/public.routes.js';
 import subscriptionsRoutes from './routes/subscriptions.routes.js';
 
 const app = express();
@@ -37,13 +39,18 @@ app.use(async (_request, response, next) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/galleries', galleriesRoutes);
 app.use('/api/payments', paymentsRoutes);
+app.use('/api/photos', photosRoutes);
 app.use('/api/profile', profileRoutes);
+app.use('/api/public', publicRoutes);
 app.use('/api/subscriptions', subscriptionsRoutes);
 app.use('/api', legacyRoutes);
 
 app.use((error: Error, _request: Request, response: Response, _next: () => void) => {
-  if (error.message.includes('File too large')) {
-    return response.status(413).json({ error: 'Cada arquivo pode ter até 25 MB.' });
+  const code = 'code' in error ? String(error.code) : '';
+  if (code === 'LIMIT_FILE_SIZE' || error.message.includes('File too large')) {
+    return response.status(413).json({
+      error: 'Cada foto pode ter até 25 MB. Tente enviar menos arquivos por vez.',
+    });
   }
   response.status(400).json({ error: 'Não foi possível processar a solicitação.' });
 });

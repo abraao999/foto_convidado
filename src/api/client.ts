@@ -1,6 +1,7 @@
 import type { SubscriptionInfo, SubscriptionSummary } from '../types/subscription';
 import type { PaymentInfo } from '../types/payment';
 import type { GalleryInfo } from '../types/gallery';
+import type { PhotoInfo, PhotoStats } from '../types/photo';
 
 export interface AuthUser {
   id: string;
@@ -102,6 +103,55 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+
+  updateGallery: (
+    galleryId: string,
+    body: {
+      title: string;
+      description?: string;
+      slug?: string;
+      eventDate?: string;
+      location?: string;
+    }
+  ) =>
+    request<{ gallery: GalleryInfo; message: string }>(
+      `/api/galleries/${galleryId}`,
+      { method: 'PATCH', body: JSON.stringify(body) }
+    ),
+
+  publishGallery: (galleryId: string) =>
+    request<{ gallery: GalleryInfo; message: string }>(
+      `/api/galleries/${galleryId}/publish`,
+      { method: 'POST' }
+    ),
+
+  unpublishGallery: (galleryId: string) =>
+    request<{ gallery: GalleryInfo; message: string }>(
+      `/api/galleries/${galleryId}/unpublish`,
+      { method: 'POST' }
+    ),
+
+  archiveGallery: (galleryId: string) =>
+    request<{ gallery: GalleryInfo; message: string }>(
+      `/api/galleries/${galleryId}`,
+      { method: 'DELETE' }
+    ),
+
+  uploadGalleryCover: (galleryId: string, file: File) => {
+    const body = new FormData();
+    body.append('cover', file);
+    return request<{ gallery: GalleryInfo; message: string }>(
+      `/api/galleries/${galleryId}/cover`,
+      { method: 'POST', body }
+    );
+  },
+
+  getGalleryPhotos: (galleryId: string) =>
+    request<{ photos: PhotoInfo[] }>(
+      `/api/photos/gallery/${galleryId}`
+    ),
+
+  getPhotoStats: () => request<PhotoStats>('/api/photos/stats'),
 
   getSubscriptionSummary: () => request<SubscriptionSummary>('/api/subscriptions/me'),
 

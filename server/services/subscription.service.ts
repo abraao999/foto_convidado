@@ -22,6 +22,24 @@ export async function syncExpiredSubscriptions(): Promise<number> {
  * Função central de controle de acesso.
  * ADMIN sempre tem acesso. Usuários comuns precisam de assinatura ACTIVE e não vencida.
  */
+/** Galeria publicada pode receber fotos de convidados enquanto o acesso estiver ativo ou no período de carência. */
+export async function canAcceptGalleryUploads(userId: string): Promise<boolean> {
+  const user = await User.findById(userId);
+  if (!user) return false;
+  if (user.role === 'ADMIN') return true;
+  if (await hasActiveSubscription(userId)) return true;
+
+  await syncExpiredSubscriptions();
+  const last = await Subscription.findOne({ userId: user._id }).sort({
+    expiresAt: -1,
+  });
+  if (!last?.expiresAt) return false;
+
+  const graceEnd = new Date(last.expiresAt);
+  graceEnd.setDate(graceEnd.getDate() + platformConfig.publicGalleryGraceDays);
+  return new Date() <= graceEnd;
+}
+
 export async function hasActiveSubscription(userId: string): Promise<boolean> {
   const user = await User.findById(userId);
   if (!user) return false;

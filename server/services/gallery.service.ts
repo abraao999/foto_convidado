@@ -14,14 +14,19 @@ export interface CreateGalleryInput {
   location?: string;
 }
 
+export type UpdateGalleryInput = CreateGalleryInput;
+
 export function serializeGallery(gallery: IGalleryDocument) {
+  const id = gallery._id.toString();
   return {
-    id: gallery._id.toString(),
+    id,
     userId: gallery.userId.toString(),
     title: gallery.title,
     description: gallery.description,
     slug: gallery.slug,
-    coverPhoto: gallery.coverPhoto,
+    coverPhoto: gallery.coverPhoto
+      ? `/api/galleries/${id}/cover?v=${gallery.updatedAt.getTime()}`
+      : undefined,
     eventDate: gallery.eventDate,
     location: gallery.location,
     status: gallery.status,
@@ -67,4 +72,103 @@ export async function createGallery(
     location: input.location?.trim() || undefined,
     status: 'DRAFT',
   });
+}
+
+async function findOwnedGallery(userId: string, galleryId: string) {
+  if (!Types.ObjectId.isValid(galleryId)) {
+    throw new Error('Galeria não encontrada.');
+  }
+  const gallery = await Gallery.findOne({
+    _id: new Types.ObjectId(galleryId),
+    userId: new Types.ObjectId(userId),
+  });
+  if (!gallery) throw new Error('Galeria não encontrada.');
+  return gallery;
+}
+
+export async function updateGallery(
+  userId: string,
+  galleryId: string,
+  input: UpdateGalleryInput
+) {
+  const gallery = await findOwnedGallery(userId, galleryId);
+  if (gallery.status === 'ARCHIVED') {
+    throw new Error('Uma galeria arquivada não pode ser editada.');
+  }
+
+  const slug = normalizeSlug(input.slug || input.title);
+  if (!slug) throw new Error('Informe um endereço público válido.');
+  const duplicate = await Gallery.exists({
+    slug,
+    _id: { $ne: gallery._id },
+  });
+  if (duplicate) throw new Error('Este endereço público já está em uso.');
+
+  gallery.title = input.title.trim();
+  gallery.description = input.description?.trim() || undefined;
+  gallery.slug = slug;
+  gallery.eventDate = input.eventDate;
+  gallery.location = input.location?.trim() || undefined;
+  return gallery.save();
+}
+
+export async function setGalleryPublication(
+  userId: string,
+  galleryId: string,
+  published: boolean
+) {
+  const gallery = await findOwnedGallery(userId, galleryId);
+  if (gallery.status === 'ARCHIVED') {
+    throw new Error('Uma galeria arquivada não pode ser publicada.');
+  }
+  gallery.status = published ? 'PUBLISHED' : 'DRAFT';
+  return gallery.save();
+}
+
+export async function archiveGallery(userId: string, galleryId: string) {
+  const gallery = await findOwnedGallery(userId, galleryId);
+  gallery.status = 'ARCHIVED';
+  return gallery.save();
+}
+
+export async function setGalleryCover(
+  userId: string,
+  galleryId: string,
+  driveFileId: string
+) {
+  const gallery = await findOwnedGallery(userId, galleryId);
+  if (gallery.status === 'ARCHIVED') {
+    throw new Error('Uma galeria arquivada não pode ser editada.');
+  }
+  gallery.coverPhoto = driveFileId;
+  return gallery.save();
+}
+
+export async function getOwnedGalleryCover(userId: string, galleryId: string) {
+  const gallery = await findOwnedGallery(userId, galleryId);
+  if (!gallery.coverPhoto) throw new Error('Esta galeria ainda não tem foto de capa.');
+  return gallery.coverPhoto;
+}
+
+export async function getPublishedGalleryBySlug(slug: string) {
+  const gallery = await Gallery.findOne({
+    slug: slug.toLowerCase().trim(),
+    status: 'PUBLISHED',
+  });
+  if (!gallery) throw new Error('Galeria não encontrada ou indisponível.');
+  return gallery;
+}
+
+export function serializePublicGallery(gallery: IGalleryDocument) {
+  return {
+    title: gallery.title,
+    description: gallery.description,
+    slug: gallery.slug,
+    eventDate: gallery.eventDate,
+    location: gallery.location,
+    coverUrl: gallery.coverPhoto
+      ? `/api/public/galleries/${gallery.slug}/cover?v=${gallery.updatedAt.getTime()}`
+      : undefined,
+    uploadUrl: `/galeria/${gallery.slug}/enviar`,
+  };
 }
