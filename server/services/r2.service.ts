@@ -53,7 +53,7 @@ function extensionFromName(fileName: string, mimeType?: string) {
   return 'jpg';
 }
 
-/** Chaves R2 sempre contêm `/`; IDs do Drive não. */
+/** Chaves R2 no formato events/... ou users/... */
 export function isR2StorageKey(value: string) {
   return value.includes('/');
 }

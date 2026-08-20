@@ -107,7 +107,6 @@ router.post(
             avatarStorageKey: storageKey,
             avatarUrl: `/api/profile/avatar`,
           },
-          $unset: { avatarDriveFileId: 1 },
         },
         { new: true, runValidators: true }
       );

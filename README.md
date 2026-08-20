@@ -27,6 +27,8 @@ MONGODB_URI=mongodb+srv://...
 JWT_SECRET=...
 ```
 
+Pode remover variáveis `GOOGLE_*` do `.env` e da Vercel — o app não usa mais Google Drive.
+
 ## Rodar localmente
 
 ```bash
@@ -55,13 +57,3 @@ O bucket permanece privado. Visualização e download passam pelo backend autent
 ## Vercel
 
 Cadastre as variáveis `R2_*`, `MONGODB_URI`, `JWT_SECRET` e Mercado Pago. Não use o filesystem da Vercel para guardar fotos.
-
-## Migração (histórico)
-
-Fotos antigas do Google Drive foram migradas com:
-
-```bash
-npx tsx scripts/migrate-drive-to-r2.ts
-```
-
-O Google Drive **não** é mais usado pelo app. Arquivos antigos no Drive não são apagados automaticamente.

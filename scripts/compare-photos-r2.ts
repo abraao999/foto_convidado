@@ -39,7 +39,7 @@ async function main() {
   const photos = await mongoose.connection.db!
     .collection('photos')
     .find({})
-    .project({ fileName: 1, storageKey: 1, driveFileId: 1, galleryId: 1, createdAt: 1 })
+    .project({ fileName: 1, storageKey: 1, galleryId: 1, createdAt: 1 })
     .sort({ createdAt: -1 })
     .limit(20)
     .toArray();
@@ -48,20 +48,8 @@ async function main() {
   console.log('\n--- Fotos no Mongo (últimas 20) ---');
   for (const photo of photos) {
     const key = photo.storageKey as string | undefined;
-    const status = !key
-      ? 'DRIVE_ONLY'
-      : r2Keys.has(key)
-        ? 'OK_NO_R2'
-        : 'MISSING_IN_R2';
-    // fix typo: OK if in r2
-    const label = !key
-      ? 'DRIVE_ONLY'
-      : r2Keys.has(key)
-        ? 'OK'
-        : 'MISSING_IN_R2';
-    console.log(
-      `${label}\t${photo._id}\t${photo.fileName}\t${key ?? photo.driveFileId}`
-    );
+    const label = !key ? 'NO_KEY' : r2Keys.has(key) ? 'OK' : 'MISSING_IN_R2';
+    console.log(`${label}\t${photo._id}\t${photo.fileName}\t${key ?? '-'}`);
   }
 
   await mongoose.disconnect();

@@ -214,7 +214,6 @@ export async function uploadPhotoChunk(input: {
     token: input.sessionToken,
     expiresAt: { $gt: new Date() },
     completedStorageKey: { $exists: false },
-    driveFileId: { $exists: false },
   });
   if (!session?.storageKey) {
     throw new Error('Sessão de envio inválida ou expirada.');

@@ -9,7 +9,6 @@
     "dev:server": "tsx watch server.ts",
     "test": "tsx --test server/**/*.test.ts",
     "test:r2": "tsx scripts/test-r2.ts",
-    "migrate:drive-to-r2": "tsx scripts/migrate-drive-to-r2.ts",
     "build": "tsc -p tsconfig.server.json && vite build",
     "start": "node dist-server/server.js"
   },
