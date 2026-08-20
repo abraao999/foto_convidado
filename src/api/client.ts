@@ -151,6 +151,86 @@ export const api = {
       `/api/photos/gallery/${galleryId}`
     ),
 
+  downloadGalleryZip: async (
+    galleryId: string,
+    photoIds: string[],
+    suggestedName = 'galeria-fotos.zip'
+  ) => {
+    const ids = photoIds.join(',');
+    const url = `/api/photos/gallery/${encodeURIComponent(
+      galleryId
+    )}/zip?ids=${encodeURIComponent(ids)}`;
+
+    type SaveFilePicker = (options: {
+      suggestedName?: string;
+      types?: Array<{
+        description: string;
+        accept: Record<string, string[]>;
+      }>;
+    }) => Promise<FileSystemFileHandle>;
+
+    const savePicker = (
+      window as Window & { showSaveFilePicker?: SaveFilePicker }
+    ).showSaveFilePicker;
+
+    if (typeof savePicker === 'function') {
+      let fileHandle: FileSystemFileHandle;
+      try {
+        fileHandle = await savePicker({
+          suggestedName,
+          types: [
+            {
+              description: 'Arquivo ZIP',
+              accept: { 'application/zip': ['.zip'] },
+            },
+          ],
+        });
+      } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') {
+          throw new Error('Download cancelado.');
+        }
+        fileHandle = undefined as unknown as FileSystemFileHandle;
+      }
+
+      if (fileHandle) {
+        const response = await fetch(url, { credentials: 'include' });
+        if (!response.ok) {
+          const data = (await response.json().catch(() => ({}))) as ApiError;
+          throw new Error(
+            data.error ?? data.message ?? 'Não foi possível gerar o ZIP.'
+          );
+        }
+
+        const writable = await fileHandle.createWritable();
+        try {
+          if (response.body) {
+            await response.body.pipeTo(writable);
+          } else {
+            await writable.write(await response.blob());
+            await writable.close();
+          }
+        } catch (error) {
+          try {
+            await writable.abort();
+          } catch {
+            // ignore abort errors
+          }
+          throw error;
+        }
+        return;
+      }
+    }
+
+    // Fallback (Safari/Firefox): navegação GET no documento principal.
+    // Não usa iframe — navegadores modernos bloqueiam download em iframe oculto.
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.rel = 'noopener';
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+  },
+
   getPhotoStats: () => request<PhotoStats>('/api/photos/stats'),
 
   getSubscriptionSummary: () => request<SubscriptionSummary>('/api/subscriptions/me'),

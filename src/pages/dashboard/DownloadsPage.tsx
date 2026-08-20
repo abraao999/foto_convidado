@@ -7,6 +7,8 @@ import PhotoPagination, {
 import type { GalleryInfo } from '../../types/gallery';
 import type { PhotoInfo } from '../../types/photo';
 
+const MAX_ZIP_PHOTOS = 100;
+
 export default function DownloadsPage() {
   const [galleries, setGalleries] = useState<GalleryInfo[]>([]);
   const [galleryId, setGalleryId] = useState('');
@@ -14,7 +16,9 @@ export default function DownloadsPage() {
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
+  const [zipping, setZipping] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
 
   const activeGalleries = useMemo(
     () => galleries.filter((gallery) => gallery.status !== 'ARCHIVED'),
@@ -55,6 +59,7 @@ export default function DownloadsPage() {
     }
     setLoading(true);
     setError(null);
+    setMessage(null);
     setPage(1);
     api
       .getGalleryPhotos(galleryId)
@@ -86,25 +91,45 @@ export default function DownloadsPage() {
     [photos, selected]
   );
 
+  const allSelected =
+    photos.length > 0 && selectedPhotos.length === photos.length;
+
   function toggle(id: string) {
     setSelected((current) => ({ ...current, [id]: !current[id] }));
   }
 
   function toggleAllOnPage() {
-    const allSelected =
+    const allOnPage =
       pagedPhotos.items.length > 0 &&
       pageSelectedCount === pagedPhotos.items.length;
     setSelected((current) => {
       const next = { ...current };
       for (const photo of pagedPhotos.items) {
-        if (allSelected) delete next[photo.id];
+        if (allOnPage) delete next[photo.id];
         else next[photo.id] = true;
       }
       return next;
     });
   }
 
-  function downloadSelected() {
+  function toggleAllInGallery() {
+    if (allSelected) {
+      setSelected({});
+      return;
+    }
+    const next: Record<string, boolean> = {};
+    for (const photo of photos.slice(0, MAX_ZIP_PHOTOS)) {
+      next[photo.id] = true;
+    }
+    setSelected(next);
+    if (photos.length > MAX_ZIP_PHOTOS) {
+      setMessage(
+        `Selecionamos as primeiras ${MAX_ZIP_PHOTOS} fotos (limite do ZIP).`
+      );
+    }
+  }
+
+  function downloadIndividually() {
     selectedPhotos.forEach((photo, index) => {
       window.setTimeout(() => {
         const link = document.createElement('a');
@@ -115,6 +140,40 @@ export default function DownloadsPage() {
     });
   }
 
+  async function downloadZip() {
+    if (!galleryId || selectedPhotos.length === 0) return;
+    const galleryTitle =
+      activeGalleries.find((gallery) => gallery.id === galleryId)?.title ??
+      'galeria';
+    const suggestedName = `${galleryTitle
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 60) || 'galeria'}-fotos.zip`;
+
+    setZipping(true);
+    setError(null);
+    setMessage(null);
+    try {
+      await api.downloadGalleryZip(
+        galleryId,
+        selectedPhotos.map((photo) => photo.id),
+        suggestedName
+      );
+      setMessage(
+        `Se o navegador pedir, escolha onde salvar o ZIP (${selectedPhotos.length} foto(s)).`
+      );
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'Não foi possível gerar o ZIP.'
+      );
+    } finally {
+      setZipping(false);
+    }
+  }
+
   return (
     <main className="panel-page">
       <header className="panel-header">
@@ -122,13 +181,14 @@ export default function DownloadsPage() {
           <p className="auth-eyebrow">Privado</p>
           <h1>Download</h1>
           <p className="auth-muted">
-            Baixe as fotos do seu evento. Esta área é exclusiva do dono da
-            galeria.
+            Baixe as fotos do seu evento em ZIP (streaming) ou individualmente.
+            Esta área é exclusiva do dono da galeria.
           </p>
         </div>
       </header>
 
       {error && <p className="status error">{error}</p>}
+      {message && <p className="status success">{message}</p>}
 
       {loading && photos.length === 0 ? (
         <p className="auth-muted">Carregando…</p>
@@ -148,6 +208,7 @@ export default function DownloadsPage() {
               <select
                 value={galleryId}
                 onChange={(event) => setGalleryId(event.target.value)}
+                disabled={zipping}
               >
                 {activeGalleries.map((gallery) => (
                   <option value={gallery.id} key={gallery.id}>
@@ -169,6 +230,7 @@ export default function DownloadsPage() {
                   type="button"
                   className="ghost-button"
                   onClick={toggleAllOnPage}
+                  disabled={zipping}
                 >
                   {pageSelectedCount === pagedPhotos.items.length
                     ? 'Limpar página'
@@ -176,11 +238,37 @@ export default function DownloadsPage() {
                 </button>
                 <button
                   type="button"
-                  className="send-button compact-button"
-                  onClick={downloadSelected}
-                  disabled={selectedPhotos.length === 0}
+                  className="ghost-button"
+                  onClick={toggleAllInGallery}
+                  disabled={zipping}
                 >
-                  Baixar {selectedPhotos.length || ''} selecionada(s)
+                  {allSelected ? 'Limpar tudo' : 'Selecionar todas'}
+                </button>
+                <button
+                  type="button"
+                  className={`send-button compact-button ${
+                    zipping ? 'is-progress' : ''
+                  }`}
+                  onClick={downloadZip}
+                  disabled={zipping || selectedPhotos.length === 0}
+                  aria-busy={zipping}
+                >
+                  {zipping ? (
+                    <>
+                      <span className="send-button-fill" style={{ width: '100%' }} />
+                      <span className="send-button-label">Gerando ZIP…</span>
+                    </>
+                  ) : (
+                    `Baixar ZIP (${selectedPhotos.length || 0})`
+                  )}
+                </button>
+                <button
+                  type="button"
+                  className="ghost-button"
+                  onClick={downloadIndividually}
+                  disabled={zipping || selectedPhotos.length === 0}
+                >
+                  Baixar individualmente
                 </button>
               </div>
               <section className="public-photo-grid owner-photo-grid">
@@ -195,6 +283,7 @@ export default function DownloadsPage() {
                       type="checkbox"
                       checked={Boolean(selected[photo.id])}
                       onChange={() => toggle(photo.id)}
+                      disabled={zipping}
                     />
                     <img
                       src={photo.thumbnailUrl}

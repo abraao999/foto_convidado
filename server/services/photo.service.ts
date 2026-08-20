@@ -329,6 +329,64 @@ export async function getOwnedPhoto(userId: string, photoId: string) {
   });
 }
 
+const MAX_ZIP_PHOTOS = 100;
+
+export function uniqueZipEntryNames(fileNames: string[]) {
+  const used = new Map<string, number>();
+  return fileNames.map((raw) => {
+    const name = raw.trim() || 'foto.jpg';
+    const count = (used.get(name) ?? 0) + 1;
+    used.set(name, count);
+    if (count === 1) return name;
+    const dot = name.lastIndexOf('.');
+    if (dot <= 0) return `${name}-${count}`;
+    return `${name.slice(0, dot)}-${count}${name.slice(dot)}`;
+  });
+}
+
+export async function getOwnedPhotosForZip(input: {
+  userId: string;
+  galleryId: string;
+  photoIds: string[];
+}) {
+  const gallery = await ownedGallery(input.userId, input.galleryId);
+  const uniqueIds = [...new Set(input.photoIds.filter(Boolean))];
+
+  if (uniqueIds.length === 0) {
+    throw new Error('Selecione ao menos uma foto.');
+  }
+  if (uniqueIds.length > MAX_ZIP_PHOTOS) {
+    throw new Error(
+      `Você pode baixar no máximo ${MAX_ZIP_PHOTOS} fotos por ZIP.`
+    );
+  }
+
+  const objectIds = uniqueIds
+    .filter((id) => Types.ObjectId.isValid(id))
+    .map((id) => new Types.ObjectId(id));
+
+  if (objectIds.length === 0) {
+    throw new Error('Nenhuma foto válida selecionada.');
+  }
+
+  const photos = await Photo.find({
+    userId: new Types.ObjectId(input.userId),
+    galleryId: new Types.ObjectId(input.galleryId),
+    _id: { $in: objectIds },
+  });
+
+  if (photos.length === 0) {
+    throw new Error('Nenhuma foto encontrada.');
+  }
+
+  const byId = new Map(photos.map((photo) => [photo._id.toString(), photo]));
+  const ordered = uniqueIds
+    .map((id) => byId.get(id))
+    .filter((photo): photo is NonNullable<typeof photo> => Boolean(photo));
+
+  return { gallery, photos: ordered };
+}
+
 export async function getUserPhotoStats(userId: string) {
   const [usage] = await Photo.aggregate<{ count: number; totalBytes: number }>([
     { $match: { userId: new Types.ObjectId(userId) } },

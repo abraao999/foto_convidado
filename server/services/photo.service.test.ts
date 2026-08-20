@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   hasValidImageSignature,
+  uniqueZipEntryNames,
   type PhotoUpload,
 } from './photo.service.js';
 
@@ -33,4 +34,12 @@ test('aceita assinaturas reais de JPEG, PNG e WebP', () => {
 
 test('rejeita arquivo disfarçado apenas pelo MIME type', () => {
   assert.equal(hasValidImageSignature(file(Buffer.from('not-an-image'))), false);
+});
+
+test('gera nomes únicos para entradas do ZIP', () => {
+  assert.deepEqual(uniqueZipEntryNames(['a.jpg', 'a.jpg', 'b.png']), [
+    'a.jpg',
+    'a-2.jpg',
+    'b.png',
+  ]);
 });

@@ -1077,6 +1077,7 @@ footer {
 
 .owner-download-actions {
   justify-content: flex-start;
+  flex-wrap: wrap;
   margin: 8px 0 18px;
 }
 
