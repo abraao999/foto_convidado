@@ -5,9 +5,10 @@ import { authenticate } from '../middleware/auth.js';
 import { User } from '../models/User.js';
 import { serializeUser } from '../services/auth.service.js';
 import {
-  downloadProfileAvatar,
-  uploadProfileAvatar,
-} from '../services/google-drive.service.js';
+  buildAvatarStorageKey,
+  uploadFile,
+} from '../services/r2.service.js';
+import { openStoredFile } from '../services/storage-read.service.js';
 import { updateProfile } from '../services/profile.service.js';
 import { formatZodError } from '../utils/validation.js';
 
@@ -50,13 +51,13 @@ router.get(
   '/avatar',
   authenticate,
   async (request: Request, response: Response) => {
-    const fileId = request.user!.avatarDriveFileId;
-    if (!fileId) {
+    const storageRef = request.user!.avatarStorageKey;
+    if (!storageRef) {
       return response.status(404).json({ error: 'Foto de perfil não encontrada.' });
     }
 
     try {
-      const avatar = await downloadProfileAvatar(fileId);
+      const avatar = await openStoredFile(storageRef);
       response.setHeader('Content-Type', avatar.mimeType);
       response.setHeader('Cache-Control', 'private, max-age=300');
       response.setHeader('X-Content-Type-Options', 'nosniff');
@@ -89,19 +90,24 @@ router.post(
     }
 
     try {
-      const uploaded = await uploadProfileAvatar({
-        userId: request.user!._id.toString(),
+      const storageKey = buildAvatarStorageKey(
+        request.user!._id.toString(),
+        request.file.originalname,
+        request.file.mimetype
+      );
+      await uploadFile({
+        storageKey,
         buffer: request.file.buffer,
         mimeType: request.file.mimetype,
-        originalName: request.file.originalname,
       });
       const user = await User.findByIdAndUpdate(
         request.user!._id,
         {
           $set: {
-            avatarUrl: uploaded.url,
-            avatarDriveFileId: uploaded.fileId,
+            avatarStorageKey: storageKey,
+            avatarUrl: `/api/profile/avatar`,
           },
+          $unset: { avatarDriveFileId: 1 },
         },
         { new: true, runValidators: true }
       );

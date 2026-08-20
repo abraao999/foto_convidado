@@ -9,12 +9,17 @@ export interface IUploadSession {
   token: string;
   userId: Types.ObjectId;
   galleryId: Types.ObjectId;
-  uploadUrl: string;
+  /** Legado Drive resumable URL. */
+  uploadUrl?: string;
+  storageKey?: string;
+  /** Quantidade de partes temporárias já enviadas ao R2. */
+  partCount: number;
   fileName: string;
   mimeType: string;
   totalSize: number;
   uploadedBytes: number;
   driveFileId?: string;
+  completedStorageKey?: string;
   expiresAt: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -31,12 +36,15 @@ const uploadSessionSchema = new Schema<IUploadSessionDocument>(
       ref: 'Gallery',
       required: true,
     },
-    uploadUrl: { type: String, required: true },
+    uploadUrl: { type: String },
+    storageKey: { type: String, maxlength: 512 },
+    partCount: { type: Number, default: 0, min: 0 },
     fileName: { type: String, required: true, maxlength: 255 },
     mimeType: { type: String, required: true, maxlength: 100 },
     totalSize: { type: Number, required: true, min: 1 },
     uploadedBytes: { type: Number, default: 0, min: 0 },
     driveFileId: { type: String },
+    completedStorageKey: { type: String },
     expiresAt: { type: Date, required: true },
   },
   { timestamps: true }

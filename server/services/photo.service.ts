@@ -9,11 +9,14 @@ import {
   serializePublicGallery,
 } from './gallery.service.js';
 import {
-  createResumableGalleryUpload,
-  makeDriveFilePublic,
-  uploadResumableChunk,
-} from './google-drive.service.js';
+  buildPhotoStorageKey,
+  buildUploadPartKey,
+  deleteFile,
+  getObjectStream,
+  uploadFile,
+} from './r2.service.js';
 import { canAcceptGalleryUploads } from './subscription.service.js';
+import { streamToBuffer } from '../utils/image-preview.js';
 
 export interface PhotoUpload {
   originalname: string;
@@ -31,11 +34,17 @@ const allowedMimeTypes = new Set([
 ]);
 
 export function serializePhoto(photo: IPhotoDocument) {
+  const id = photo._id.toString();
+  const isHeic =
+    photo.mimeType === 'image/heic' ||
+    photo.mimeType === 'image/heif' ||
+    /\.heic$|\.heif$/i.test(photo.fileName);
+  const previewQuery = isHeic ? '&format=jpeg' : '';
   return {
-    id: photo._id.toString(),
+    id,
     galleryId: photo.galleryId.toString(),
     fileName: photo.fileName,
-    thumbnailUrl: `/api/photos/${photo._id.toString()}/content?v=${photo.updatedAt.getTime()}`,
+    thumbnailUrl: `/api/photos/${id}/content?v=${photo.updatedAt.getTime()}${previewQuery}`,
     mimeType: photo.mimeType,
     size: photo.size,
     createdAt: photo.createdAt,
@@ -132,8 +141,15 @@ function validateUploadMeta(input: {
   }
 }
 
-export async function getPublicGalleryUploadInfo(slug: string) {
+async function getVisiblePublicGallery(slug: string) {
   const gallery = await getPublishedGalleryBySlug(slug);
+  const visible = await canAcceptGalleryUploads(gallery.userId.toString());
+  if (!visible) throw new Error('Galeria não encontrada ou indisponível.');
+  return gallery;
+}
+
+export async function getPublicGalleryUploadInfo(slug: string) {
+  const gallery = await getVisiblePublicGallery(slug);
   await resolveUploadGallery({
     ownerUserId: gallery.userId.toString(),
     galleryId: gallery._id.toString(),
@@ -166,13 +182,11 @@ export async function initPhotoUpload(input: {
   });
   await assertStorageAvailable(input.ownerUserId, input.size);
 
-  const { uploadUrl } = await createResumableGalleryUpload({
-    userId: input.ownerUserId,
-    galleryId: input.galleryId,
-    mimeType: input.mimeType,
-    originalName: input.fileName,
-    size: input.size,
-  });
+  const storageKey = buildPhotoStorageKey(
+    input.galleryId,
+    input.fileName,
+    input.mimeType
+  );
 
   const token = crypto.randomBytes(24).toString('hex');
   const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
@@ -180,7 +194,8 @@ export async function initPhotoUpload(input: {
     token,
     userId: new Types.ObjectId(input.ownerUserId),
     galleryId: new Types.ObjectId(input.galleryId),
-    uploadUrl,
+    storageKey,
+    partCount: 0,
     fileName: input.fileName,
     mimeType: input.mimeType,
     totalSize: input.size,
@@ -198,30 +213,41 @@ export async function uploadPhotoChunk(input: {
   const session = await UploadSession.findOne({
     token: input.sessionToken,
     expiresAt: { $gt: new Date() },
+    completedStorageKey: { $exists: false },
     driveFileId: { $exists: false },
   });
-  if (!session) throw new Error('Sessão de envio inválida ou expirada.');
+  if (!session?.storageKey) {
+    throw new Error('Sessão de envio inválida ou expirada.');
+  }
 
-  if (session.uploadedBytes === 0 && !hasValidImageSignature({
-    originalname: session.fileName,
-    mimetype: session.mimeType,
-    size: session.totalSize,
-    buffer: input.buffer,
-  })) {
+  if (
+    session.uploadedBytes === 0 &&
+    !hasValidImageSignature({
+      originalname: session.fileName,
+      mimetype: session.mimeType,
+      size: session.totalSize,
+      buffer: input.buffer,
+    })
+  ) {
     throw new Error('O arquivo não contém uma imagem válida.');
   }
 
-  const result = await uploadResumableChunk({
-    uploadUrl: session.uploadUrl,
+  const nextBytes = session.uploadedBytes + input.buffer.length;
+  if (nextBytes > session.totalSize) {
+    throw new Error('O envio ultrapassou o tamanho declarado do arquivo.');
+  }
+
+  const partNumber = session.partCount + 1;
+  await uploadFile({
+    storageKey: buildUploadPartKey(session.token, partNumber),
     buffer: input.buffer,
-    start: session.uploadedBytes,
-    total: session.totalSize,
-    mimeType: session.mimeType,
+    mimeType: 'application/octet-stream',
   });
 
-  session.uploadedBytes += input.buffer.length;
+  session.partCount = partNumber;
+  session.uploadedBytes = nextBytes;
 
-  if (!result.complete) {
+  if (session.uploadedBytes < session.totalSize) {
     await session.save();
     return {
       complete: false as const,
@@ -230,18 +256,49 @@ export async function uploadPhotoChunk(input: {
     };
   }
 
-  await makeDriveFilePublic(result.fileId);
+  const partBuffers: Buffer[] = [];
+  for (let part = 1; part <= session.partCount; part += 1) {
+    const partKey = buildUploadPartKey(session.token, part);
+    const partFile = await getObjectStream(partKey);
+    partBuffers.push(await streamToBuffer(partFile.stream));
+  }
+
+  const fullBuffer = Buffer.concat(partBuffers);
+  if (fullBuffer.length !== session.totalSize) {
+    throw new Error('O arquivo montado não corresponde ao tamanho esperado.');
+  }
+
+  await uploadFile({
+    storageKey: session.storageKey,
+    buffer: fullBuffer,
+    mimeType: session.mimeType,
+  });
+
+  // Confirma que o objeto final existe antes de gravar no MongoDB.
+  await getObjectStream(session.storageKey);
+
+  for (let part = 1; part <= session.partCount; part += 1) {
+    try {
+      await deleteFile(buildUploadPartKey(session.token, part));
+    } catch (error) {
+      console.warn('Falha ao limpar parte temporária do R2:', error);
+    }
+  }
+
   const photo = await Photo.create({
     userId: session.userId,
     galleryId: session.galleryId,
     fileName: session.fileName,
-    driveFileId: result.fileId,
-    thumbnailUrl: `https://drive.google.com/thumbnail?id=${encodeURIComponent(result.fileId)}&sz=w1200`,
+    storageKey: session.storageKey,
+    thumbnailUrl: `/api/photos/pending/content`,
     mimeType: session.mimeType,
     size: session.totalSize,
   });
 
-  session.driveFileId = result.fileId;
+  photo.thumbnailUrl = `/api/photos/${photo._id.toString()}/content`;
+  await photo.save();
+
+  session.completedStorageKey = session.storageKey;
   await session.save();
 
   return {

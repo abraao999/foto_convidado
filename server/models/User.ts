@@ -10,6 +10,7 @@ export interface IUser {
   phone?: string;
   avatarUrl?: string;
   avatarDriveFileId?: string;
+  avatarStorageKey?: string;
   eventName?: string;
   eventDescription?: string;
   eventDate?: Date;
@@ -32,6 +33,7 @@ const userSchema = new Schema<IUserDocument>(
     phone: { type: String, trim: true, maxlength: 30 },
     avatarUrl: { type: String, trim: true, maxlength: 2048 },
     avatarDriveFileId: { type: String, trim: true },
+    avatarStorageKey: { type: String, trim: true, maxlength: 512 },
     eventName: { type: String, trim: true, maxlength: 160 },
     eventDescription: { type: String, trim: true, maxlength: 1000 },
     eventDate: { type: Date },

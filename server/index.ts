@@ -5,7 +5,6 @@ import cookieParser from 'cookie-parser';
 import { connectDB } from './db.js';
 import authRoutes from './routes/auth.routes.js';
 import galleriesRoutes from './routes/galleries.routes.js';
-import legacyRoutes from './routes/legacy.routes.js';
 import paymentsRoutes from './routes/payments.routes.js';
 import photosRoutes from './routes/photos.routes.js';
 import profileRoutes from './routes/profile.routes.js';
@@ -43,7 +42,6 @@ app.use('/api/photos', photosRoutes);
 app.use('/api/profile', profileRoutes);
 app.use('/api/public', publicRoutes);
 app.use('/api/subscriptions', subscriptionsRoutes);
-app.use('/api', legacyRoutes);
 
 app.use((error: Error, _request: Request, response: Response, _next: () => void) => {
   const code = 'code' in error ? String(error.code) : '';

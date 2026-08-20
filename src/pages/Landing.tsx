@@ -12,7 +12,7 @@ export default function Landing() {
           Crie, compartilhe e <em>venda acesso</em> às suas galerias.
         </h1>
         <p className="auth-muted">
-          Plataforma para eventos, festas e casamentos. Seus convidados enviam e baixam fotos com facilidade.
+          Plataforma para eventos, festas e casamentos. Seus convidados enviam fotos; só você vê e baixa a galeria.
         </p>
         <div className="landing-actions">
           {user ? (
@@ -30,9 +30,6 @@ export default function Landing() {
             </>
           )}
         </div>
-        <p className="auth-links">
-          <Link to="/enviar">Ver página de upload legada</Link>
-        </p>
       </section>
     </main>
   );

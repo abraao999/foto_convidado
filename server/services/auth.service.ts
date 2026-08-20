@@ -11,7 +11,7 @@ export function serializeUser(user: IUserDocument) {
     lastName: user.lastName,
     email: user.email,
     phone: user.phone,
-    avatarUrl: user.avatarDriveFileId
+    avatarUrl: user.avatarStorageKey
       ? `/api/profile/avatar?v=${user.updatedAt.getTime()}`
       : user.avatarUrl,
     eventName: user.eventName,

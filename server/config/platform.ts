@@ -22,7 +22,7 @@ export const platformConfig = {
     25 * 1024 * 1024
   ),
 
-  /** Tamanho de cada pedaço no envio resumível. */
+  /** Tamanho de cada pedaço no envio (2 MB para caber no limite de body da Vercel). */
   uploadChunkBytes: parseEnvInt(
     process.env.UPLOAD_CHUNK_BYTES,
     2 * 1024 * 1024

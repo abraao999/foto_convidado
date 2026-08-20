@@ -8,16 +8,20 @@
     "dev:client": "vite",
     "dev:server": "tsx watch server.ts",
     "test": "tsx --test server/**/*.test.ts",
+    "test:r2": "tsx scripts/test-r2.ts",
+    "migrate:drive-to-r2": "tsx scripts/migrate-drive-to-r2.ts",
     "build": "tsc -p tsconfig.server.json && vite build",
     "start": "node dist-server/server.js"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1114.0",
+    "@aws-sdk/s3-request-presigner": "^3.1114.0",
     "bcryptjs": "^2.4.3",
     "cookie-parser": "^1.4.7",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "express-rate-limit": "^8.6.2",
-    "googleapis": "^175.0.0",
+    "heic-convert": "^2.1.0",
     "jsonwebtoken": "^9.0.2",
     "mercadopago": "^3.4.0",
     "mongoose": "^8.9.3",
@@ -26,6 +30,7 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^7.1.1",
+    "sharp": "^0.35.3",
     "zod": "^3.24.1"
   },
   "devDependencies": {

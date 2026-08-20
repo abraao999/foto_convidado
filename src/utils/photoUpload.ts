@@ -14,6 +14,14 @@ interface ChunkResponse {
   photo?: PhotoInfo;
 }
 
+export interface UploadProgress {
+  loaded: number;
+  total: number;
+  percent: number;
+}
+
+export type UploadProgressHandler = (progress: UploadProgress) => void;
+
 function mimeFromFileName(fileName: string) {
   const extension = fileName.split('.').pop()?.toLowerCase();
   if (extension === 'jpg' || extension === 'jpeg') return 'image/jpeg';
@@ -37,11 +45,26 @@ async function readApiError(response: Response, fallback: string) {
   }
 }
 
+function reportProgress(
+  onProgress: UploadProgressHandler | undefined,
+  loaded: number,
+  total: number
+) {
+  if (!onProgress) return;
+  const safeTotal = total > 0 ? total : 1;
+  onProgress({
+    loaded: Math.min(loaded, safeTotal),
+    total: safeTotal,
+    percent: Math.min(100, Math.round((loaded / safeTotal) * 100)),
+  });
+}
+
 async function uploadFileInChunks(
   file: File,
   initUrl: string,
   chunkUrl: string,
-  credentials: RequestCredentials = 'include'
+  credentials: RequestCredentials = 'include',
+  onFileProgress?: (loaded: number, total: number) => void
 ) {
   const mimeType = file.type || mimeFromFileName(file.name);
   const initResponse = await fetch(initUrl, {
@@ -61,6 +84,7 @@ async function uploadFileInChunks(
 
   const chunkSize = initData.chunkSize || DEFAULT_CHUNK_SIZE;
   let offset = 0;
+  onFileProgress?.(0, file.size);
 
   while (offset < file.size) {
     const chunk = file.slice(offset, offset + chunkSize);
@@ -78,57 +102,91 @@ async function uploadFileInChunks(
     }
     const chunkData = (await chunkResponse.json()) as ChunkResponse;
 
+    offset += chunk.size;
+    onFileProgress?.(Math.min(offset, file.size), file.size);
+
     if (chunkData.complete && chunkData.photo) {
       return chunkData.photo;
     }
-
-    offset += chunk.size;
   }
 
   throw new Error('O envio não foi concluído.');
 }
 
+async function uploadFilesSequentially(
+  files: File[],
+  uploadOne: (
+    file: File,
+    onFileProgress?: (loaded: number, total: number) => void
+  ) => Promise<PhotoInfo>,
+  onProgress?: UploadProgressHandler
+) {
+  const total = files.reduce((sum, file) => sum + file.size, 0);
+  let completedBytes = 0;
+  const photos: PhotoInfo[] = [];
+
+  reportProgress(onProgress, 0, total);
+
+  for (const file of files) {
+    const photo = await uploadOne(file, (loaded) => {
+      reportProgress(onProgress, completedBytes + loaded, total);
+    });
+    completedBytes += file.size;
+    reportProgress(onProgress, completedBytes, total);
+    photos.push(photo);
+  }
+
+  return photos;
+}
+
 export async function uploadGalleryPhoto(
   galleryId: string,
-  file: File
+  file: File,
+  onFileProgress?: (loaded: number, total: number) => void
 ): Promise<PhotoInfo> {
   return uploadFileInChunks(
     file,
     `/api/photos/gallery/${galleryId}/init`,
-    '/api/photos/upload/chunk'
+    '/api/photos/upload/chunk',
+    'include',
+    onFileProgress
   );
 }
 
 export async function uploadPublicGalleryPhoto(
   slug: string,
-  file: File
+  file: File,
+  onFileProgress?: (loaded: number, total: number) => void
 ): Promise<PhotoInfo> {
   return uploadFileInChunks(
     file,
     `/api/public/galleries/${slug}/upload/init`,
     `/api/public/galleries/${slug}/upload/chunk`,
-    'same-origin'
+    'same-origin',
+    onFileProgress
   );
 }
 
 export async function uploadGalleryPhotos(
   galleryId: string,
-  files: File[]
+  files: File[],
+  onProgress?: UploadProgressHandler
 ): Promise<PhotoInfo[]> {
-  const photos: PhotoInfo[] = [];
-  for (const file of files) {
-    photos.push(await uploadGalleryPhoto(galleryId, file));
-  }
-  return photos;
+  return uploadFilesSequentially(
+    files,
+    (file, onFileProgress) => uploadGalleryPhoto(galleryId, file, onFileProgress),
+    onProgress
+  );
 }
 
 export async function uploadPublicGalleryPhotos(
   slug: string,
-  files: File[]
+  files: File[],
+  onProgress?: UploadProgressHandler
 ): Promise<PhotoInfo[]> {
-  const photos: PhotoInfo[] = [];
-  for (const file of files) {
-    photos.push(await uploadPublicGalleryPhoto(slug, file));
-  }
-  return photos;
+  return uploadFilesSequentially(
+    files,
+    (file, onFileProgress) => uploadPublicGalleryPhoto(slug, file, onFileProgress),
+    onProgress
+  );
 }

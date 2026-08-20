@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import QRCode from 'qrcode';
 import { api } from '../../api/client';
 import {
@@ -222,20 +223,18 @@ export default function EventsPage() {
           <p className="auth-eyebrow">Galerias</p>
           <h1>Meus Eventos</h1>
           <p className="auth-muted">
-            Cada evento possui uma galeria e um endereço público próprio.
+            Cada evento possui uma galeria. O link público serve só para os convidados enviarem fotos.
           </p>
         </div>
-        {(activeGalleries.length > 0 || editingId) && (
-          <button
-            type="button"
-            className="send-button compact-button"
-            onClick={() =>
-              creating || editingId ? closeForm() : startCreating()
-            }
-          >
-            {creating || editingId ? 'Cancelar' : 'Criar nova galeria'}
-          </button>
-        )}
+        <button
+          type="button"
+          className="send-button compact-button"
+          onClick={() =>
+            creating || editingId ? closeForm() : startCreating()
+          }
+        >
+          {creating || editingId ? 'Cancelar' : 'Criar nova galeria'}
+        </button>
       </header>
 
       {error && <p className="status error">{error}</p>}
@@ -319,6 +318,14 @@ export default function EventsPage() {
                     >
                       Copiar
                     </button>
+                  </div>
+                  <div className="public-url-row">
+                    <Link className="ghost-button" to="/fotos">
+                      Ver fotos
+                    </Link>
+                    <Link className="ghost-button" to="/download">
+                      Baixar fotos
+                    </Link>
                   </div>
                   {qrCodeUrl && (
                     <div className="qr-code-card">

@@ -175,6 +175,8 @@ h1 em { color: var(--accent); font-style: italic; }
 }
 
 .send-button {
+  position: relative;
+  overflow: hidden;
   width: 100%;
   margin-top: 18px;
   padding: 16px;
@@ -189,6 +191,34 @@ h1 em { color: var(--accent); font-style: italic; }
 .send-button:hover { background: var(--accent-dark); }
 .send-button:disabled { opacity: 0.65; cursor: wait; }
 .send-button span { margin-left: 9px; font-size: 18px; }
+
+.send-button.is-progress {
+  background: #e8d9d6;
+  opacity: 1;
+  cursor: wait;
+}
+
+.send-button.is-progress:hover {
+  background: #e8d9d6;
+}
+
+.send-button-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  background: var(--accent);
+  transition: width 0.25s ease;
+  pointer-events: none;
+}
+
+.send-button-label {
+  position: relative;
+  z-index: 1;
+  margin-left: 0 !important;
+  font-size: 14px !important;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
 
 .status {
   margin: 20px 0 0;
@@ -956,7 +986,8 @@ footer {
   border-top: 1px solid #eee7de;
 }
 
-.event-actions button {
+.event-actions button,
+.event-actions a {
   padding: 7px 9px;
   border: 1px solid #ddd4cb;
   border-radius: 6px;
@@ -966,6 +997,7 @@ footer {
   font-size: 10px;
   font-weight: 700;
   cursor: pointer;
+  text-decoration: none;
 }
 
 .event-actions button:hover {
@@ -1007,6 +1039,11 @@ footer {
 .storage-summary span { color: #777; font-size: 11px; }
 
 .photo-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
   margin-bottom: 14px;
   padding: 16px 20px;
   border: 1px solid #eee7de;
@@ -1029,6 +1066,51 @@ footer {
   border-radius: 7px;
   background: #fff;
   font: inherit;
+}
+
+.photo-download-link {
+  color: var(--accent-dark);
+  font-size: 10px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.owner-download-actions {
+  justify-content: flex-start;
+  margin: 8px 0 18px;
+}
+
+.owner-photo-grid {
+  padding-bottom: 0;
+}
+
+.photo-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 18px;
+  padding: 12px 0 4px;
+}
+
+.photo-pagination p {
+  margin: 0;
+  color: #777;
+  font-size: 12px;
+  text-align: center;
+  flex: 1 1 auto;
+}
+
+.photo-pagination .ghost-button {
+  width: auto;
+  margin: 0;
+  min-width: 96px;
+}
+
+.photo-pagination .ghost-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .photo-dropzone {
@@ -1171,4 +1253,97 @@ footer {
   .qr-code-card { align-items: flex-start; flex-direction: column; }
   .storage-summary { justify-items: start; }
   .photo-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+.public-gallery {
+  width: min(100%, 980px);
+}
+
+.public-gallery-hero { width: min(100%, 560px); margin: 0 auto; }
+
+.public-meta {
+  margin: 0 0 22px;
+  color: #777;
+  font-size: 13px;
+}
+
+.public-actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 28px;
+}
+
+.public-actions .send-button,
+.public-actions .ghost-button {
+  width: auto;
+  margin: 0;
+}
+
+.public-empty { width: min(100%, 520px); }
+
+.public-photo-grid {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  padding-bottom: 48px;
+}
+
+.public-photo {
+  padding: 0;
+  border: 0;
+  background: #fff;
+  border-radius: 10px;
+  overflow: hidden;
+  cursor: pointer;
+  position: relative;
+}
+
+.public-photo img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  display: block;
+}
+
+.public-photo.selectable input {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: 18px;
+  height: 18px;
+  z-index: 1;
+}
+
+.public-photo.checked {
+  outline: 3px solid var(--accent);
+}
+
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  gap: 16px;
+  padding: 24px;
+  background: #1b1b1bcc;
+}
+
+.lightbox img {
+  max-width: min(92vw, 920px);
+  max-height: 78vh;
+  object-fit: contain;
+  border-radius: 8px;
+}
+
+.lightbox-actions {
+  display: flex;
+  gap: 10px;
+}
+
+@media (max-width: 700px) {
+  .public-photo-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

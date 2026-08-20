@@ -7,6 +7,9 @@ import {
 } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../../api/client';
+import PhotoPagination, {
+  slicePhotoPage,
+} from '../../components/PhotoPagination';
 import { uploadGalleryPhotos } from '../../utils/photoUpload';
 import type { GalleryInfo } from '../../types/gallery';
 import type { PhotoInfo, PhotoStats } from '../../types/photo';
@@ -24,10 +27,12 @@ export default function PhotosPage() {
   const [galleries, setGalleries] = useState<GalleryInfo[]>([]);
   const [galleryId, setGalleryId] = useState('');
   const [photos, setPhotos] = useState<PhotoInfo[]>([]);
+  const [page, setPage] = useState(1);
   const [stats, setStats] = useState<PhotoStats | null>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [uploadPercent, setUploadPercent] = useState(0);
   const [dragging, setDragging] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -35,6 +40,11 @@ export default function PhotosPage() {
   const activeGalleries = useMemo(
     () => galleries.filter((gallery) => gallery.status !== 'ARCHIVED'),
     [galleries]
+  );
+
+  const pagedPhotos = useMemo(
+    () => slicePhotoPage(photos, page),
+    [photos, page]
   );
 
   useEffect(() => {
@@ -58,9 +68,11 @@ export default function PhotosPage() {
   useEffect(() => {
     if (!galleryId) {
       setPhotos([]);
+      setPage(1);
       return;
     }
     setLoading(true);
+    setPage(1);
     api
       .getGalleryPhotos(galleryId)
       .then((result) => setPhotos(result.photos))
@@ -71,6 +83,10 @@ export default function PhotosPage() {
       )
       .finally(() => setLoading(false));
   }, [galleryId]);
+
+  useEffect(() => {
+    if (page !== pagedPhotos.page) setPage(pagedPhotos.page);
+  }, [page, pagedPhotos.page]);
 
   function selectFiles(selected: File[]) {
     setError(null);
@@ -100,11 +116,15 @@ export default function PhotosPage() {
   async function upload() {
     if (!galleryId || files.length === 0) return;
     setUploading(true);
+    setUploadPercent(0);
     setError(null);
     setMessage(null);
     try {
-      const uploaded = await uploadGalleryPhotos(galleryId, files);
+      const uploaded = await uploadGalleryPhotos(galleryId, files, ({ percent }) => {
+        setUploadPercent(percent);
+      });
       setPhotos((current) => [...uploaded, ...current]);
+      setPage(1);
       const uploadedBytes = uploaded.reduce(
         (total, photo) => total + photo.size,
         0
@@ -126,6 +146,7 @@ export default function PhotosPage() {
       );
     } finally {
       setUploading(false);
+      setUploadPercent(0);
     }
   }
 
@@ -133,10 +154,11 @@ export default function PhotosPage() {
     <main className="panel-page">
       <header className="panel-header">
         <div>
-          <p className="auth-eyebrow">Google Drive</p>
+          <p className="auth-eyebrow">Galeria</p>
           <h1>Fotos</h1>
           <p className="auth-muted">
-            Envie e organize as imagens de cada galeria.
+            Envie e visualize as imagens de cada galeria. Só você tem acesso a
+            esta página.
           </p>
         </div>
         {stats && (
@@ -233,11 +255,32 @@ export default function PhotosPage() {
                 </button>
                 <button
                   type="button"
-                  className="send-button compact-button"
+                  className={`send-button compact-button ${
+                    uploading ? 'is-progress' : ''
+                  }`}
                   onClick={upload}
                   disabled={uploading}
+                  aria-busy={uploading}
+                  aria-valuemin={uploading ? 0 : undefined}
+                  aria-valuemax={uploading ? 100 : undefined}
+                  aria-valuenow={uploading ? uploadPercent : undefined}
+                  aria-label={
+                    uploading
+                      ? `Enviando fotos, ${uploadPercent}%`
+                      : 'Enviar fotos'
+                  }
                 >
-                  {uploading ? 'Enviando…' : 'Enviar fotos'}
+                  {uploading ? (
+                    <>
+                      <span
+                        className="send-button-fill"
+                        style={{ width: `${uploadPercent}%` }}
+                      />
+                      <span className="send-button-label">{uploadPercent}%</span>
+                    </>
+                  ) : (
+                    'Enviar fotos'
+                  )}
                 </button>
               </div>
             </section>
@@ -252,21 +295,34 @@ export default function PhotosPage() {
                 <p>Nenhuma foto enviada para esta galeria.</p>
               </div>
             ) : (
-              <div className="photo-grid">
-                {photos.map((photo) => (
-                  <article className="photo-card" key={photo.id}>
-                    <img
-                      src={photo.thumbnailUrl}
-                      alt={photo.fileName}
-                      loading="lazy"
-                    />
-                    <div>
-                      <strong title={photo.fileName}>{photo.fileName}</strong>
-                      <span>{formatStorage(photo.size)}</span>
-                    </div>
-                  </article>
-                ))}
-              </div>
+              <>
+                <div className="photo-grid">
+                  {pagedPhotos.items.map((photo) => (
+                    <article className="photo-card" key={photo.id}>
+                      <img
+                        src={photo.thumbnailUrl}
+                        alt={photo.fileName}
+                        loading="lazy"
+                      />
+                      <div>
+                        <strong title={photo.fileName}>{photo.fileName}</strong>
+                        <span>{formatStorage(photo.size)}</span>
+                        <a
+                          className="photo-download-link"
+                          href={`/api/photos/${photo.id}/content?download=1`}
+                        >
+                          Baixar
+                        </a>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+                <PhotoPagination
+                  page={pagedPhotos.page}
+                  totalItems={photos.length}
+                  onChange={setPage}
+                />
+              </>
             )}
           </section>
         </>

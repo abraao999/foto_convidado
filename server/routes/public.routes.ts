@@ -4,7 +4,7 @@ import { z } from 'zod';
 import {
   getPublishedGalleryBySlug,
 } from '../services/gallery.service.js';
-import { downloadProfileAvatar } from '../services/google-drive.service.js';
+import { openStoredFile } from '../services/storage-read.service.js';
 import {
   getPublicGalleryUploadInfo,
   initPublicPhotoUpload,
@@ -73,7 +73,7 @@ router.get(
           .status(404)
           .json({ error: 'Esta galeria ainda não tem foto de capa.' });
       }
-      const file = await downloadProfileAvatar(gallery.coverPhoto);
+      const file = await openStoredFile(gallery.coverPhoto);
       response.setHeader('Content-Type', file.mimeType);
       response.setHeader('Cache-Control', 'public, max-age=300');
       file.stream.pipe(response);

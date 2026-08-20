@@ -3,7 +3,12 @@ import { rateLimit } from 'express-rate-limit';
 import { z } from 'zod';
 import { authenticate } from '../middleware/auth.js';
 import { requireActiveSubscription } from '../middleware/requireActiveSubscription.js';
-import { downloadDriveFile } from '../services/google-drive.service.js';
+import { openStoredFile } from '../services/storage-read.service.js';
+import {
+  createHeicPreview,
+  isHeicPhoto,
+  streamToBuffer,
+} from '../utils/image-preview.js';
 import {
   getOwnedPhoto,
   getUserPhotoStats,
@@ -140,13 +145,50 @@ router.get(
     }
 
     try {
-      const stream = await downloadDriveFile(photo.driveFileId);
-      response.setHeader('Content-Type', photo.mimeType);
+      const storageRef = photo.storageKey;
+      if (!storageRef) {
+        return response.status(404).json({ error: 'Foto não encontrada no armazenamento.' });
+      }
+
+      const file = await openStoredFile(storageRef);
+      const download = request.query.download === '1';
+      const asciiName = photo.fileName
+        .replace(/[^\x20-\x7e]/g, '_')
+        .replace(/"/g, '');
+
       response.setHeader('Cache-Control', 'private, max-age=3600');
       response.setHeader('X-Content-Type-Options', 'nosniff');
-      stream.on('error', () => response.destroy());
-      stream.pipe(response);
+
+      if (download) {
+        response.setHeader('Content-Type', photo.mimeType);
+        response.setHeader(
+          'Content-Disposition',
+          `attachment; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(photo.fileName)}`
+        );
+        file.stream.on('error', () => response.destroy());
+        file.stream.pipe(response);
+        return;
+      }
+
+      if (isHeicPhoto(photo.mimeType, photo.fileName)) {
+        const buffer = await streamToBuffer(file.stream);
+        const preview = await createHeicPreview(buffer);
+        response.setHeader('Content-Type', 'image/jpeg');
+        response.send(preview);
+        return;
+      }
+
+      response.setHeader('Content-Type', photo.mimeType || file.mimeType);
+      file.stream.on('error', () => response.destroy());
+      file.stream.pipe(response);
     } catch (error) {
+      const code =
+        error && typeof error === 'object' && 'Code' in error
+          ? String((error as { Code?: string }).Code)
+          : '';
+      if (code === 'NoSuchKey' || code === 'NotFound') {
+        return response.status(404).json({ error: 'Arquivo da foto não encontrado no armazenamento.' });
+      }
       console.error('Falha ao carregar foto:', error);
       response.status(502).json({ error: 'Não foi possível carregar a foto.' });
     }

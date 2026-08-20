@@ -33,6 +33,7 @@ export default function GuestGalleryUploadPage() {
   const [files, setFiles] = useState<File[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [uploadPercent, setUploadPercent] = useState(0);
   const [dragging, setDragging] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -97,10 +98,13 @@ export default function GuestGalleryUploadPage() {
   async function sendPhotos() {
     if (!files.length || !slug) return;
     setUploading(true);
+    setUploadPercent(0);
     setError(null);
     setMessage(null);
     try {
-      await uploadPublicGalleryPhotos(slug, files);
+      await uploadPublicGalleryPhotos(slug, files, ({ percent }) => {
+        setUploadPercent(percent);
+      });
       setFiles([]);
       if (inputRef.current) inputRef.current.value = '';
       setMessage('Fotos enviadas! Obrigado por compartilhar este momento.');
@@ -110,6 +114,7 @@ export default function GuestGalleryUploadPage() {
       );
     } finally {
       setUploading(false);
+      setUploadPercent(0);
     }
   }
 
@@ -204,11 +209,33 @@ export default function GuestGalleryUploadPage() {
               ))}
             </div>
             <button
-              className="send-button"
+              type="button"
+              className={`send-button ${uploading ? 'is-progress' : ''}`}
               onClick={sendPhotos}
               disabled={uploading}
+              aria-busy={uploading}
+              aria-valuemin={uploading ? 0 : undefined}
+              aria-valuemax={uploading ? 100 : undefined}
+              aria-valuenow={uploading ? uploadPercent : undefined}
+              aria-label={
+                uploading
+                  ? `Enviando fotos, ${uploadPercent}%`
+                  : 'Enviar para a galeria'
+              }
             >
-              {uploading ? 'Enviando…' : <>Enviar para a galeria <span>→</span></>}
+              {uploading ? (
+                <>
+                  <span
+                    className="send-button-fill"
+                    style={{ width: `${uploadPercent}%` }}
+                  />
+                  <span className="send-button-label">{uploadPercent}%</span>
+                </>
+              ) : (
+                <>
+                  Enviar para a galeria <span>→</span>
+                </>
+              )}
             </button>
           </section>
         )}

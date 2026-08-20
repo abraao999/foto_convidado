@@ -134,13 +134,13 @@ export async function archiveGallery(userId: string, galleryId: string) {
 export async function setGalleryCover(
   userId: string,
   galleryId: string,
-  driveFileId: string
+  storageRef: string
 ) {
   const gallery = await findOwnedGallery(userId, galleryId);
   if (gallery.status === 'ARCHIVED') {
     throw new Error('Uma galeria arquivada não pode ser editada.');
   }
-  gallery.coverPhoto = driveFileId;
+  gallery.coverPhoto = storageRef;
   return gallery.save();
 }
 

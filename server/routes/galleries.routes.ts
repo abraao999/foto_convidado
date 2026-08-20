@@ -13,7 +13,11 @@ import {
   setGalleryPublication,
   updateGallery,
 } from '../services/gallery.service.js';
-import { downloadProfileAvatar, uploadGalleryPhoto } from '../services/google-drive.service.js';
+import {
+  buildCoverStorageKey,
+  uploadFile,
+} from '../services/r2.service.js';
+import { openStoredFile } from '../services/storage-read.service.js';
 import { formatZodError } from '../utils/validation.js';
 
 const router = Router();
@@ -143,17 +147,20 @@ router.post(
     }
     try {
       const galleryId = galleryIdFrom(request);
-      const uploaded = await uploadGalleryPhoto({
-        userId: request.user!._id.toString(),
+      const storageKey = buildCoverStorageKey(
         galleryId,
+        request.file.originalname,
+        request.file.mimetype
+      );
+      await uploadFile({
+        storageKey,
         buffer: request.file.buffer,
         mimeType: request.file.mimetype,
-        originalName: `cover-${request.file.originalname}`,
       });
       const gallery = await setGalleryCover(
         request.user!._id.toString(),
         galleryId,
-        uploaded.fileId
+        storageKey
       );
       response.json({
         gallery: serializeGallery(gallery),
@@ -170,11 +177,11 @@ router.get(
   authenticate,
   async (request: Request, response: Response) => {
     try {
-      const fileId = await getOwnedGalleryCover(
+      const storageRef = await getOwnedGalleryCover(
         request.user!._id.toString(),
         galleryIdFrom(request)
       );
-      const file = await downloadProfileAvatar(fileId);
+      const file = await openStoredFile(storageRef);
       response.setHeader('Content-Type', file.mimeType);
       response.setHeader('Cache-Control', 'private, max-age=300');
       file.stream.pipe(response);
