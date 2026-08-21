@@ -292,6 +292,12 @@ export interface AdminOverview {
   photos: number;
   revenueCents: number;
   offer: AccessOffer;
+  storage: {
+    objectCount: number;
+    usedBytes: number;
+    limitBytes: number;
+    freeBytes: number;
+  } | null;
 }
 
 export interface AdminUserRow extends AuthUser {

@@ -11,11 +11,44 @@ import {
   formatDate,
   formatPrice,
   formatStorage,
+  formatStorageDetail,
 } from '../../types/subscription';
 import { paymentStatusLabel } from '../../types/payment';
 
 type AdminTab = 'overview' | 'users' | 'payments' | 'galleries';
 const ADMIN_PAGE_SIZE = 40;
+
+function StorageUsageCard({
+  storage,
+}: {
+  storage: NonNullable<AdminOverview['storage']>;
+}) {
+  const usedPercent =
+    storage.limitBytes > 0
+      ? Math.min(100, (storage.usedBytes / storage.limitBytes) * 100)
+      : 0;
+
+  return (
+    <>
+      <strong>{formatStorageDetail(storage.usedBytes)}</strong>
+      <p>
+        {formatStorageDetail(storage.freeBytes)} disponíveis de{' '}
+        {formatStorageDetail(storage.limitBytes)}
+      </p>
+      <div
+        className="admin-storage-bar"
+        role="meter"
+        aria-label="Uso do armazenamento R2"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={Math.round(usedPercent)}
+      >
+        <div style={{ width: `${usedPercent}%` }} />
+      </div>
+      <small>{storage.objectCount} arquivo(s) no bucket</small>
+    </>
+  );
+}
 
 export default function AdminPage() {
   const [tab, setTab] = useState<AdminTab>('overview');
@@ -204,6 +237,14 @@ export default function AdminPage() {
           <article>
             <span>Fotos</span>
             <strong>{overview.photos}</strong>
+          </article>
+          <article className="admin-storage-card">
+            <span>Armazenamento R2</span>
+            {overview.storage ? (
+              <StorageUsageCard storage={overview.storage} />
+            ) : (
+              <p>Não foi possível medir o bucket agora.</p>
+            )}
           </article>
         </section>
         <p className="auth-muted admin-offer-note">

@@ -14,6 +14,8 @@ import {
   syncExpiredSubscriptions,
 } from './subscription.service.js';
 import { hashPassword } from '../utils/password.js';
+import { getBucketUsage } from './r2.service.js';
+import { platformConfig } from '../config/platform.js';
 
 export const ADMIN_LIST_PAGE_SIZE = 40;
 
@@ -41,6 +43,7 @@ export async function getAdminOverview() {
     galleries,
     photos,
     revenueAgg,
+    storage,
   ] = await Promise.all([
     User.countDocuments(),
     User.countDocuments({ status: 'BLOCKED' }),
@@ -55,7 +58,14 @@ export async function getAdminOverview() {
       { $match: { status: 'APPROVED' } },
       { $group: { _id: null, totalCents: { $sum: '$amountCents' } } },
     ]),
+    getBucketUsage().catch((error) => {
+      console.warn('Falha ao medir uso do R2:', error);
+      return null;
+    }),
   ]);
+
+  const limitBytes = platformConfig.maxStorageBytes;
+  const usedBytes = storage?.usedBytes ?? 0;
 
   return {
     users,
@@ -66,6 +76,14 @@ export async function getAdminOverview() {
     photos,
     revenueCents: revenueAgg[0]?.totalCents ?? 0,
     offer: getAccessOffer(),
+    storage: storage
+      ? {
+          objectCount: storage.objectCount,
+          usedBytes,
+          limitBytes,
+          freeBytes: Math.max(0, limitBytes - usedBytes),
+        }
+      : null,
   };
 }
 

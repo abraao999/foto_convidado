@@ -34,6 +34,26 @@ export function formatStorage(bytes: number): string {
   return `${Math.round(bytes / 1024 ** 2)} MB`;
 }
 
+export function formatStorageDetail(bytes: number): string {
+  const abs = Math.max(0, bytes);
+  const gb = abs / 1024 ** 3;
+  if (gb >= 1) {
+    return `${gb.toLocaleString('pt-BR', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })} GB`;
+  }
+  const mb = abs / 1024 ** 2;
+  if (mb >= 1) {
+    return `${mb.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} MB`;
+  }
+  const kb = abs / 1024;
+  if (kb >= 1) {
+    return `${kb.toLocaleString('pt-BR', { maximumFractionDigits: 0 })} KB`;
+  }
+  return `${Math.round(abs)} B`;
+}
+
 export function formatPrice(priceCents: number): string {
   return (priceCents / 100).toLocaleString('pt-BR', {
     style: 'currency',

@@ -330,3 +330,42 @@ export async function deleteStoredObject(storageKey: string) {
     return false;
   }
 }
+
+export interface R2BucketUsage {
+  objectCount: number;
+  usedBytes: number;
+}
+
+let usageCache: { at: number; value: R2BucketUsage } | null = null;
+const USAGE_CACHE_MS = 60 * 1000;
+
+/** Soma o tamanho de todos os objetos do bucket. Resultado cacheado por 1 minuto. */
+export async function getBucketUsage(): Promise<R2BucketUsage> {
+  if (usageCache && Date.now() - usageCache.at < USAGE_CACHE_MS) {
+    return usageCache.value;
+  }
+
+  const { client, bucket } = createR2Client();
+  let objectCount = 0;
+  let usedBytes = 0;
+  let token: string | undefined;
+
+  do {
+    const listed = await client.send(
+      new ListObjectsV2Command({
+        Bucket: bucket,
+        ContinuationToken: token,
+        MaxKeys: 1000,
+      })
+    );
+    for (const obj of listed.Contents ?? []) {
+      objectCount += 1;
+      usedBytes += obj.Size ?? 0;
+    }
+    token = listed.IsTruncated ? listed.NextContinuationToken : undefined;
+  } while (token);
+
+  const value = { objectCount, usedBytes };
+  usageCache = { at: Date.now(), value };
+  return value;
+}

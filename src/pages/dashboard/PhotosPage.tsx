@@ -12,7 +12,7 @@ import PhotoPagination, {
 } from '../../components/PhotoPagination';
 import { uploadGalleryPhotos } from '../../utils/photoUpload';
 import type { GalleryInfo } from '../../types/gallery';
-import type { PhotoInfo, PhotoStats } from '../../types/photo';
+import type { PhotoInfo } from '../../types/photo';
 import { formatStorage } from '../../types/subscription';
 
 const acceptedTypes = [
@@ -29,7 +29,6 @@ export default function PhotosPage() {
   const [photos, setPhotos] = useState<PhotoInfo[]>([]);
   const [totalPhotos, setTotalPhotos] = useState(0);
   const [page, setPage] = useState(1);
-  const [stats, setStats] = useState<PhotoStats | null>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -45,14 +44,14 @@ export default function PhotosPage() {
   );
 
   useEffect(() => {
-    Promise.all([api.getGalleries(), api.getPhotoStats()])
-      .then(([galleryResult, statsResult]) => {
+    api
+      .getGalleries()
+      .then((galleryResult) => {
         const available = galleryResult.galleries.filter(
           (gallery) => gallery.status !== 'ARCHIVED'
         );
         setGalleries(galleryResult.galleries);
         setGalleryId(available[0]?.id ?? '');
-        setStats(statsResult);
       })
       .catch((err) =>
         setError(
@@ -123,19 +122,6 @@ export default function PhotosPage() {
       const refreshed = await api.getGalleryPhotos(galleryId, 1, PHOTO_PAGE_SIZE);
       setPhotos(refreshed.photos);
       setTotalPhotos(refreshed.total);
-      const uploadedBytes = uploaded.reduce(
-        (total, photo) => total + photo.size,
-        0
-      );
-      setStats((current) =>
-        current
-          ? {
-              ...current,
-              count: current.count + uploaded.length,
-              totalBytes: current.totalBytes + uploadedBytes,
-            }
-          : current
-      );
       setFiles([]);
       setMessage(`${uploaded.length} foto(s) enviada(s) com sucesso.`);
     } catch (err) {
@@ -161,15 +147,6 @@ export default function PhotosPage() {
     setMessage(null);
     try {
       await api.deletePhoto(photo.id);
-      setStats((current) =>
-        current
-          ? {
-              ...current,
-              count: Math.max(0, current.count - 1),
-              totalBytes: Math.max(0, current.totalBytes - photo.size),
-            }
-          : current
-      );
       const nextTotal = Math.max(0, totalPhotos - 1);
       const lastPage = Math.max(1, Math.ceil(nextTotal / PHOTO_PAGE_SIZE));
       const nextPage = Math.min(page, lastPage);
@@ -206,22 +183,13 @@ export default function PhotosPage() {
             pode ver, baixar e excluir fotos até a limpeza.
           </p>
         </div>
-        {stats && (
-          <div className="storage-summary">
-            <strong>{stats.count} foto(s)</strong>
-            <span>
-              {formatStorage(stats.totalBytes)} de{' '}
-              {formatStorage(stats.maxStorageBytes)}
-            </span>
-          </div>
-        )}
       </header>
 
       {error && <p className="status error">{error}</p>}
       {message && <p className="status success">{message}</p>}
 
       {activeGalleries.length === 0 ? (
-        <section className="empty-state">
+        <section className="photos-empty">
           <h2>Crie uma galeria primeiro</h2>
           <p>As fotos precisam pertencer a um evento.</p>
           <Link to="/eventos" className="send-button compact-button">
