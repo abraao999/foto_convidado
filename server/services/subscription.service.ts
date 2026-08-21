@@ -2,37 +2,20 @@ import { Types, type ClientSession } from 'mongoose';
 import { platformConfig } from '../config/platform.js';
 import { Subscription, type ISubscriptionDocument, type SubscriptionStatus } from '../models/Subscription.js';
 import { User, type IUserDocument } from '../models/User.js';
-import {
-  daysUntilMediaPurge,
-  purgeExpiredUserMedia,
-} from './media-cleanup.service.js';
-import { cleanupExpiredUploadParts } from './r2.service.js';
+import { daysUntilMediaPurge } from './media-cleanup.service.js';
 
 export interface ActiveSubscriptionResult {
   subscription: ISubscriptionDocument;
   daysRemaining: number;
 }
 
-/** Marca assinaturas ACTIVE vencidas como EXPIRED e limpa mídia fora da carência. */
+/** Marca assinaturas ACTIVE vencidas como EXPIRED. */
 export async function syncExpiredSubscriptions(): Promise<number> {
   const now = new Date();
   const result = await Subscription.updateMany(
     { status: 'ACTIVE', expiresAt: { $lte: now } },
     { $set: { status: 'EXPIRED' } }
   );
-
-  try {
-    await purgeExpiredUserMedia({ limit: 3 });
-  } catch (error) {
-    console.error('Falha ao limpar fotos de assinaturas expiradas:', error);
-  }
-
-  try {
-    await cleanupExpiredUploadParts();
-  } catch (error) {
-    console.error('Falha ao limpar partes temporárias de upload:', error);
-  }
-
   return result.modifiedCount;
 }
 

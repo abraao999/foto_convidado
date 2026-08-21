@@ -75,6 +75,7 @@ O bucket permanece privado. Visualização e download passam pelo backend autent
    - `PUBLIC_URL=https://seu-dominio.com` (sem barra final)
    - `MONGODB_URI`, `JWT_SECRET`, `ADMIN_EMAIL`
    - `RESEND_API_KEY`, `EMAIL_FROM` (domínio verificado no Resend)
+   - `CRON_SECRET` (limpeza diária de mídia expirada)
    - `R2_*` (bucket **privado**)
    - `MERCADOPAGO_ACCESS_TOKEN`, `MERCADOPAGO_WEBHOOK_SECRET`
    - `MERCADOPAGO_USE_SANDBOX=false` em produção
@@ -90,4 +91,6 @@ Cookies de sessão usam `httpOnly` + `secure` em produção.
 1. Quando a assinatura vence, o acesso do dono some.
 2. Por `PUBLIC_GALLERY_GRACE_DAYS` dias (padrão 30), a galeria ainda pode receber uploads de convidados.
 3. Depois da carência, **fotos e capas** da conta são apagadas do Cloudflare R2 e do MongoDB (avatar de perfil permanece).
-4. A limpeza roda automaticamente junto com a sincronização de assinaturas e também pode ser disparada em **Administração → Resumo**.
+4. A limpeza **não depende de alguém abrir o site**: a Vercel chama `/api/internal/cleanup` todo dia às 09:00 UTC (`CRON_SECRET`).
+5. Se um arquivo falhar no R2, o registro no Mongo permanece e o cron tenta de novo no dia seguinte.
+6. O botão em **Administração → Resumo** dispara a mesma limpeza manualmente.

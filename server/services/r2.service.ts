@@ -267,3 +267,33 @@ export async function deleteFile(storageKey: string) {
     })
   );
 }
+
+export function isMissingR2Object(error: unknown) {
+  if (!error || typeof error !== 'object') return false;
+  const record = error as {
+    name?: string;
+    Code?: string;
+    code?: string;
+    $metadata?: { httpStatusCode?: number };
+  };
+  const code = record.Code ?? record.code ?? record.name ?? '';
+  const status = record.$metadata?.httpStatusCode;
+  return (
+    code === 'NoSuchKey' ||
+    code === 'NotFound' ||
+    code === 'NoSuchBucket' ||
+    status === 404
+  );
+}
+
+/** true se o objeto saiu do R2 (apagado ou já inexistente). */
+export async function deleteStoredObject(storageKey: string) {
+  try {
+    await deleteFile(storageKey);
+    return true;
+  } catch (error) {
+    if (isMissingR2Object(error)) return true;
+    console.warn(`Falha ao apagar objeto no R2 (${storageKey}):`, error);
+    return false;
+  }
+}

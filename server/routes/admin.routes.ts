@@ -13,7 +13,7 @@ import {
   listAdminUsers,
   setUserStatus,
 } from '../services/admin.service.js';
-import { purgeExpiredUserMedia } from '../services/media-cleanup.service.js';
+import { runScheduledCleanup } from '../services/media-cleanup.service.js';
 import { getAccessOffer } from '../services/subscription.service.js';
 import { formatZodError, registerSchema } from '../utils/validation.js';
 
@@ -171,7 +171,7 @@ router.get('/galleries', async (_request: Request, response: Response) => {
 
 router.post('/purge-expired-media', async (_request: Request, response: Response) => {
   try {
-    const result = await purgeExpiredUserMedia({ limit: 20 });
+    const result = await runScheduledCleanup({ limit: 20 });
     response.json({
       ...result,
       message:

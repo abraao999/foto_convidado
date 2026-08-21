@@ -12,6 +12,7 @@ import photosRoutes from './routes/photos.routes.js';
 import profileRoutes from './routes/profile.routes.js';
 import publicRoutes from './routes/public.routes.js';
 import subscriptionsRoutes from './routes/subscriptions.routes.js';
+import internalRoutes from './routes/internal.routes.js';
 
 const app = express();
 
@@ -57,6 +58,7 @@ app.use('/api/photos', photosRoutes);
 app.use('/api/profile', profileRoutes);
 app.use('/api/public', publicRoutes);
 app.use('/api/subscriptions', subscriptionsRoutes);
+app.use('/api/internal', internalRoutes);
 
 app.use((error: Error, _request: Request, response: Response, _next: () => void) => {
   const code = 'code' in error ? String(error.code) : '';

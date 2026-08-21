@@ -4,7 +4,11 @@ import { Gallery } from '../models/Gallery.js';
 import { Photo } from '../models/Photo.js';
 import { Subscription } from '../models/Subscription.js';
 import { User } from '../models/User.js';
-import { deleteFile, isR2StorageKey } from './r2.service.js';
+import {
+  cleanupExpiredUploadParts,
+  deleteStoredObject,
+  isR2StorageKey,
+} from './r2.service.js';
 
 function graceEndDate(expiresAt: Date) {
   const end = new Date(expiresAt);
@@ -22,8 +26,10 @@ export function isPastMediaGrace(expiresAt: Date, now = new Date()) {
 }
 
 /**
- * Remove do R2 e do Mongo todas as fotos/capas de um usuário.
+ * Remove do R2 e do Mongo fotos/capas de um usuário.
+ * Só apaga o registro no Mongo depois que o objeto saiu do R2.
  * Avatar de perfil é preservado.
+ * Se algum delete no R2 falhar, não marca mediaPurgedAt (o cron tenta de novo).
  */
 export async function deleteUserGalleryMedia(userId: string) {
   if (!Types.ObjectId.isValid(userId)) {
@@ -34,41 +40,55 @@ export async function deleteUserGalleryMedia(userId: string) {
   const photos = await Photo.find({ userId: ownerId }).select('storageKey');
   let deletedPhotos = 0;
   let deletedCovers = 0;
+  let failedObjects = 0;
 
   for (const photo of photos) {
     if (photo.storageKey) {
-      try {
-        await deleteFile(photo.storageKey);
-      } catch (error) {
-        console.warn(`Falha ao apagar foto no R2 (${photo.storageKey}):`, error);
+      const removed = await deleteStoredObject(photo.storageKey);
+      if (!removed) {
+        failedObjects += 1;
+        continue;
       }
     }
-  }
-  if (photos.length > 0) {
-    const result = await Photo.deleteMany({ userId: ownerId });
-    deletedPhotos = result.deletedCount ?? 0;
+    await Photo.deleteOne({ _id: photo._id });
+    deletedPhotos += 1;
   }
 
   const galleries = await Gallery.find({ userId: ownerId });
   for (const gallery of galleries) {
     if (gallery.coverPhoto && isR2StorageKey(gallery.coverPhoto)) {
-      try {
-        await deleteFile(gallery.coverPhoto);
-        deletedCovers += 1;
-      } catch (error) {
-        console.warn(`Falha ao apagar capa no R2 (${gallery.coverPhoto}):`, error);
+      const removed = await deleteStoredObject(gallery.coverPhoto);
+      if (!removed) {
+        failedObjects += 1;
+        continue;
       }
+      deletedCovers += 1;
+      gallery.coverPhoto = undefined;
+    } else if (gallery.coverPhoto) {
+      gallery.coverPhoto = undefined;
     }
-    gallery.coverPhoto = undefined;
     if (gallery.status !== 'ARCHIVED') {
       gallery.status = 'ARCHIVED';
     }
     await gallery.save();
   }
 
-  await User.findByIdAndUpdate(ownerId, { $set: { mediaPurgedAt: new Date() } });
+  const incomplete = failedObjects > 0;
+  if (!incomplete) {
+    await User.findByIdAndUpdate(ownerId, { $set: { mediaPurgedAt: new Date() } });
+  } else {
+    console.warn(
+      `[media-cleanup] limpeza incompleta user=${userId} failedObjects=${failedObjects}`
+    );
+  }
 
-  return { deletedPhotos, deletedCovers, archivedGalleries: galleries.length };
+  return {
+    deletedPhotos,
+    deletedCovers,
+    archivedGalleries: galleries.length,
+    failedObjects,
+    incomplete,
+  };
 }
 
 async function userNeedsMediaPurge(userId: Types.ObjectId, now: Date) {
@@ -86,7 +106,6 @@ async function userNeedsMediaPurge(userId: Types.ObjectId, now: Date) {
   if (!last?.expiresAt) return false;
   if (!isPastMediaGrace(last.expiresAt, now)) return false;
 
-  // Já limpou depois deste vencimento.
   if (user.mediaPurgedAt && user.mediaPurgedAt >= last.expiresAt) {
     return false;
   }
@@ -101,11 +120,12 @@ async function userNeedsMediaPurge(userId: Types.ObjectId, now: Date) {
 
 /**
  * Limpa mídia de usuários cuja assinatura já passou da carência.
- * Processa em lotes pequenos para caber em requests serverless.
+ * Processa em lotes para caber em requests serverless.
  */
 export async function purgeExpiredUserMedia(options?: { limit?: number }) {
   const limit = Math.max(1, Math.min(options?.limit ?? 5, 20));
   const now = new Date();
+  const graceMs = platformConfig.publicGalleryGraceDays * 24 * 60 * 60 * 1000;
 
   const candidates = await Subscription.aggregate<{ _id: Types.ObjectId }>([
     { $match: { expiresAt: { $type: 'date' } } },
@@ -118,14 +138,10 @@ export async function purgeExpiredUserMedia(options?: { limit?: number }) {
     },
     {
       $match: {
-        lastExpiresAt: {
-          $lte: new Date(
-            now.getTime() -
-              platformConfig.publicGalleryGraceDays * 24 * 60 * 60 * 1000
-          ),
-        },
+        lastExpiresAt: { $lte: new Date(now.getTime() - graceMs) },
       },
     },
+    { $sort: { lastExpiresAt: 1 } },
     { $limit: limit * 5 },
   ]);
 
@@ -133,6 +149,7 @@ export async function purgeExpiredUserMedia(options?: { limit?: number }) {
     userId: string;
     deletedPhotos: number;
     deletedCovers: number;
+    incomplete: boolean;
   }> = [];
 
   for (const candidate of candidates) {
@@ -145,15 +162,49 @@ export async function purgeExpiredUserMedia(options?: { limit?: number }) {
       userId: candidate._id.toString(),
       deletedPhotos: result.deletedPhotos,
       deletedCovers: result.deletedCovers,
+      incomplete: result.incomplete,
     });
     console.info(
-      `[media-cleanup] user=${candidate._id} photos=${result.deletedPhotos} covers=${result.deletedCovers}`
+      `[media-cleanup] user=${candidate._id} photos=${result.deletedPhotos} covers=${result.deletedCovers} incomplete=${result.incomplete}`
     );
   }
 
   return {
     checked: candidates.length,
     purgedUsers: purged.length,
+    incompleteUsers: purged.filter((item) => item.incomplete).length,
+    deletedPhotos: purged.reduce((sum, item) => sum + item.deletedPhotos, 0),
+    deletedCovers: purged.reduce((sum, item) => sum + item.deletedCovers, 0),
     details: purged,
+  };
+}
+
+export async function expireDueSubscriptions() {
+  const result = await Subscription.updateMany(
+    { status: 'ACTIVE', expiresAt: { $lte: new Date() } },
+    { $set: { status: 'EXPIRED' } }
+  );
+  return result.modifiedCount;
+}
+
+/** Job diário: expira assinaturas, apaga mídia fora da carência e limpa tmp do R2. */
+export async function runScheduledCleanup(options?: { limit?: number }) {
+  const expiredSubscriptions = await expireDueSubscriptions();
+  const purge = await purgeExpiredUserMedia({
+    limit: options?.limit ?? 20,
+  });
+
+  let tmpPartsDeleted = 0;
+  try {
+    const tmp = await cleanupExpiredUploadParts();
+    tmpPartsDeleted = tmp.deleted;
+  } catch (error) {
+    console.error('Falha ao limpar partes temporárias de upload:', error);
+  }
+
+  return {
+    expiredSubscriptions,
+    tmpPartsDeleted,
+    ...purge,
   };
 }
