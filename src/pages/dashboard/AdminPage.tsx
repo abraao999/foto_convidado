@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import {
   api,
   type AdminGalleryRow,
@@ -22,6 +22,10 @@ export default function AdminPage() {
   const [galleries, setGalleries] = useState<AdminGalleryRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyUserId, setBusyUserId] = useState<string | null>(null);
+  const [creatingAdmin, setCreatingAdmin] = useState(false);
+  const [adminName, setAdminName] = useState('');
+  const [adminEmail, setAdminEmail] = useState('');
+  const [adminPassword, setAdminPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -78,6 +82,35 @@ export default function AdminPage() {
     }
   }
 
+  async function createAdmin(event: FormEvent) {
+    event.preventDefault();
+    setCreatingAdmin(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const result = await api.adminCreateUser({
+        name: adminName,
+        email: adminEmail,
+        password: adminPassword,
+      });
+      setMessage(result.message);
+      setAdminName('');
+      setAdminEmail('');
+      setAdminPassword('');
+      const refreshed = await api.adminUsers();
+      setUsers(refreshed.users);
+      setOverview(await api.adminOverview());
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Não foi possível criar o administrador.'
+      );
+    } finally {
+      setCreatingAdmin(false);
+    }
+  }
+
   return (
     <main className="panel-page">
       <header className="panel-header">
@@ -118,6 +151,7 @@ export default function AdminPage() {
       {loading ? (
         <p className="auth-muted">Carregando…</p>
       ) : tab === 'overview' && overview ? (
+        <>
         <section className="admin-kpi-grid">
           <article>
             <span>Usuários</span>
@@ -148,8 +182,86 @@ export default function AdminPage() {
             <strong>{overview.photos}</strong>
           </article>
         </section>
+        <div className="admin-purge-row">
+          <button
+            type="button"
+            className="ghost-button"
+            onClick={() => {
+              setError(null);
+              setMessage(null);
+              api
+                .adminPurgeExpiredMedia()
+                .then((result) => setMessage(result.message))
+                .catch((err) =>
+                  setError(
+                    err instanceof Error
+                      ? err.message
+                      : 'Não foi possível limpar a mídia.'
+                  )
+                );
+            }}
+          >
+            Limpar fotos de assinaturas expiradas
+          </button>
+          <p className="auth-muted">
+            Remove fotos e capas de contas cuja carência após o vencimento já
+            terminou. A limpeza também roda automaticamente no uso do sistema.
+          </p>
+        </div>
+        </>
       ) : tab === 'users' ? (
-        <section className="admin-table-wrap">
+        <section className="admin-users-section">
+          <form className="admin-create-form" onSubmit={createAdmin}>
+            <h2>Novo administrador</h2>
+            <p className="auth-muted">
+              Cria uma conta com papel ADMIN e acesso imediato ao painel.
+            </p>
+            <div className="admin-create-grid">
+              <label>
+                Nome
+                <input
+                  value={adminName}
+                  onChange={(event) => setAdminName(event.target.value)}
+                  required
+                  minLength={2}
+                  maxLength={120}
+                  autoComplete="off"
+                />
+              </label>
+              <label>
+                E-mail
+                <input
+                  type="email"
+                  value={adminEmail}
+                  onChange={(event) => setAdminEmail(event.target.value)}
+                  required
+                  maxLength={254}
+                  autoComplete="off"
+                />
+              </label>
+              <label>
+                Senha
+                <input
+                  type="password"
+                  value={adminPassword}
+                  onChange={(event) => setAdminPassword(event.target.value)}
+                  required
+                  minLength={8}
+                  maxLength={128}
+                  autoComplete="new-password"
+                />
+              </label>
+            </div>
+            <button
+              type="submit"
+              className="send-button compact-button"
+              disabled={creatingAdmin}
+            >
+              {creatingAdmin ? 'Criando…' : 'Criar administrador'}
+            </button>
+          </form>
+
+          <section className="admin-table-wrap">
           <table className="admin-table">
             <thead>
               <tr>
@@ -224,6 +336,7 @@ export default function AdminPage() {
           {users.length === 0 && (
             <p className="auth-muted">Nenhum usuário cadastrado.</p>
           )}
+          </section>
         </section>
       ) : tab === 'payments' ? (
         <section className="admin-table-wrap">

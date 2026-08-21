@@ -1438,3 +1438,70 @@ footer {
 @media (max-width: 700px) {
   .admin-kpi-grid { grid-template-columns: 1fr; }
 }
+
+.admin-users-section {
+  display: grid;
+  gap: 18px;
+}
+
+.admin-create-form {
+  padding: 18px;
+  background: #fff;
+  border: 1px solid #eee7de;
+  border-radius: 10px;
+}
+
+.admin-create-form h2 {
+  margin: 0 0 6px;
+  font-family: "Playfair Display", Georgia, serif;
+  font-size: 22px;
+}
+
+.admin-create-form .auth-muted {
+  margin: 0 0 14px;
+}
+
+.admin-create-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.admin-create-form label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #42443e;
+}
+
+.admin-create-form input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 11px 12px;
+  border: 1px solid #ddd4c8;
+  border-radius: 8px;
+  font: 500 14px "DM Sans", sans-serif;
+}
+
+.admin-create-form .send-button {
+  width: auto;
+  margin: 0;
+}
+
+@media (max-width: 900px) {
+  .admin-create-grid { grid-template-columns: 1fr; }
+}
+
+.admin-purge-row {
+  margin-top: 16px;
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+}
+
+.admin-purge-row .ghost-button {
+  width: auto;
+  margin: 0;
+}

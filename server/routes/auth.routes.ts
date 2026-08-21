@@ -1,4 +1,5 @@
 import { Router, type Request, type Response } from 'express';
+import { rateLimit } from 'express-rate-limit';
 import { authenticate } from '../middleware/auth.js';
 import {
   changeUserPassword,
@@ -10,7 +11,7 @@ import {
   serializeUser,
   buildResetPasswordUrl,
 } from '../services/auth.service.js';
-import { AUTH_COOKIE, cookieOptions } from '../utils/jwt.js';
+import { AUTH_COOKIE, clearCookieOptions, cookieOptions } from '../utils/jwt.js';
 import {
   changePasswordSchema,
   forgotPasswordSchema,
@@ -22,7 +23,31 @@ import {
 
 const router = Router();
 
-router.post('/register', async (request: Request, response: Response) => {
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Muitas tentativas. Aguarde alguns minutos e tente novamente.' },
+});
+
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 15,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Muitas tentativas de login. Aguarde alguns minutos.' },
+});
+
+const forgotLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 8,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Muitos pedidos de recuperação. Tente mais tarde.' },
+});
+
+router.post('/register', authLimiter, async (request: Request, response: Response) => {
   const parsed = registerSchema.safeParse(request.body);
   if (!parsed.success) return response.status(400).json({ error: formatZodError(parsed.error) });
 
@@ -36,7 +61,7 @@ router.post('/register', async (request: Request, response: Response) => {
   }
 });
 
-router.post('/login', async (request: Request, response: Response) => {
+router.post('/login', loginLimiter, async (request: Request, response: Response) => {
   const parsed = loginSchema.safeParse(request.body);
   if (!parsed.success) return response.status(400).json({ error: formatZodError(parsed.error) });
 
@@ -51,7 +76,7 @@ router.post('/login', async (request: Request, response: Response) => {
 });
 
 router.post('/logout', (_request: Request, response: Response) => {
-  response.clearCookie(AUTH_COOKIE, { path: '/' });
+  response.clearCookie(AUTH_COOKIE, clearCookieOptions());
   response.json({ ok: true });
 });
 
@@ -59,7 +84,7 @@ router.get('/me', authenticate, (request: Request, response: Response) => {
   response.json({ user: serializeUser(request.user!) });
 });
 
-router.post('/forgot-password', async (request: Request, response: Response) => {
+router.post('/forgot-password', forgotLimiter, async (request: Request, response: Response) => {
   const parsed = forgotPasswordSchema.safeParse(request.body);
   if (!parsed.success) return response.status(400).json({ error: formatZodError(parsed.error) });
 
@@ -77,7 +102,7 @@ router.post('/forgot-password', async (request: Request, response: Response) => 
   });
 });
 
-router.post('/reset-password', async (request: Request, response: Response) => {
+router.post('/reset-password', authLimiter, async (request: Request, response: Response) => {
   const parsed = resetPasswordSchema.safeParse(request.body);
   if (!parsed.success) return response.status(400).json({ error: formatZodError(parsed.error) });
 

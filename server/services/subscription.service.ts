@@ -2,19 +2,30 @@ import { Types, type ClientSession } from 'mongoose';
 import { platformConfig } from '../config/platform.js';
 import { Subscription, type ISubscriptionDocument, type SubscriptionStatus } from '../models/Subscription.js';
 import { User, type IUserDocument } from '../models/User.js';
+import {
+  daysUntilMediaPurge,
+  purgeExpiredUserMedia,
+} from './media-cleanup.service.js';
 
 export interface ActiveSubscriptionResult {
   subscription: ISubscriptionDocument;
   daysRemaining: number;
 }
 
-/** Marca assinaturas ACTIVE vencidas como EXPIRED. */
+/** Marca assinaturas ACTIVE vencidas como EXPIRED e limpa mídia fora da carência. */
 export async function syncExpiredSubscriptions(): Promise<number> {
   const now = new Date();
   const result = await Subscription.updateMany(
     { status: 'ACTIVE', expiresAt: { $lte: now } },
     { $set: { status: 'EXPIRED' } }
   );
+
+  try {
+    await purgeExpiredUserMedia({ limit: 3 });
+  } catch (error) {
+    console.error('Falha ao limpar fotos de assinaturas expiradas:', error);
+  }
+
   return result.modifiedCount;
 }
 
@@ -107,12 +118,26 @@ export type SubscriptionAlertLevel = 'info' | 'warning' | 'critical' | 'expired'
 
 export function getSubscriptionAlert(
   daysRemaining: number | null,
-  status: SubscriptionStatus | 'NONE'
+  status: SubscriptionStatus | 'NONE',
+  options?: { daysUntilMediaPurge?: number | null }
 ): { level: SubscriptionAlertLevel; message: string } | null {
   if (status === 'NONE' || status === 'EXPIRED') {
+    const untilPurge = options?.daysUntilMediaPurge;
+    if (typeof untilPurge === 'number' && untilPurge > 0) {
+      return {
+        level: 'expired',
+        message: `Seu acesso expirou. Renove em até ${untilPurge} dia(s) para não perder as fotos da galeria.`,
+      };
+    }
+    if (untilPurge !== null && untilPurge !== undefined && untilPurge <= 0) {
+      return {
+        level: 'expired',
+        message: `Seu acesso expirou e as fotos do período anterior foram removidas. Faça um novo pagamento para liberar mais ${platformConfig.accessDurationDays} dias.`,
+      };
+    }
     return {
       level: 'expired',
-      message: `Seu acesso expirou. Faça um novo pagamento para liberar mais ${platformConfig.accessDurationDays} dias.`,
+      message: `Seu acesso expirou. Faça um novo pagamento para liberar mais ${platformConfig.accessDurationDays} dias. Após ${platformConfig.publicGalleryGraceDays} dias sem renovação, as fotos são apagadas.`,
     };
   }
 
@@ -122,10 +147,10 @@ export function getSubscriptionAlert(
   for (const days of thresholds) {
     if (daysRemaining <= days) {
       if (daysRemaining <= 1) {
-        return { level: 'critical', message: 'Seu acesso vence amanhã. Renove para não perder o acesso.' };
+        return { level: 'critical', message: 'Seu acesso vence amanhã. Renove para não perder o acesso nem as fotos.' };
       }
       if (daysRemaining <= 3) {
-        return { level: 'critical', message: `Seu acesso vence em ${daysRemaining} dias. Renove agora.` };
+        return { level: 'critical', message: `Seu acesso vence em ${daysRemaining} dias. Renove agora para não perder as fotos.` };
       }
       if (daysRemaining <= 7) {
         return { level: 'warning', message: `Seu acesso vence em ${daysRemaining} dias.` };
@@ -161,7 +186,13 @@ export async function grantAccess(
     existing.expiresAt = expiresAt;
     existing.accessDaysGranted =
       (existing.accessDaysGranted ?? 0) + platformConfig.accessDurationDays;
-    return existing.save({ session });
+    const saved = await existing.save({ session });
+    await User.updateOne(
+      { _id: new Types.ObjectId(userId) },
+      { $unset: { mediaPurgedAt: 1 } },
+      session ? { session } : undefined
+    );
+    return saved;
   }
 
   const expiresAt = new Date(now);
@@ -174,7 +205,13 @@ export async function grantAccess(
     startsAt: now,
     expiresAt,
   });
-  return subscription.save({ session });
+  const created = await subscription.save({ session });
+  await User.updateOne(
+    { _id: new Types.ObjectId(userId) },
+    { $unset: { mediaPurgedAt: 1 } },
+    session ? { session } : undefined
+  );
+  return created;
 }
 
 /**
@@ -246,7 +283,15 @@ export async function getSubscriptionSummary(user: IUserDocument) {
 
   const last = await Subscription.findOne({ userId: user._id }).sort({ createdAt: -1 });
   const status = last?.status ?? 'NONE';
-  const alert = getSubscriptionAlert(null, status === 'ACTIVE' ? 'EXPIRED' : (status as SubscriptionStatus | 'NONE'));
+  const untilPurge =
+    last?.expiresAt && status !== 'ACTIVE'
+      ? daysUntilMediaPurge(last.expiresAt)
+      : null;
+  const alert = getSubscriptionAlert(
+    null,
+    status === 'ACTIVE' ? 'EXPIRED' : (status as SubscriptionStatus | 'NONE'),
+    { daysUntilMediaPurge: untilPurge }
+  );
 
   return {
     hasAccess: false,

@@ -33,3 +33,9 @@ export function cookieOptions() {
     maxAge: 7 * 24 * 60 * 60 * 1000,
   };
 }
+
+/** Opções alinhadas ao cookie de sessão, sem maxAge — necessário para limpar em produção. */
+export function clearCookieOptions() {
+  const { maxAge: _maxAge, ...options } = cookieOptions();
+  return options;
+}

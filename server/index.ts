@@ -2,6 +2,7 @@ import 'dotenv/config';
 import './types/express.js';
 import express, { type Request, type Response } from 'express';
 import cookieParser from 'cookie-parser';
+import helmet from 'helmet';
 import { connectDB } from './db.js';
 import authRoutes from './routes/auth.routes.js';
 import adminRoutes from './routes/admin.routes.js';
@@ -18,13 +19,24 @@ const app = express();
 // express-rate-limit identifique corretamente cada cliente.
 app.set('trust proxy', 1);
 
+app.use(
+  helmet({
+    // SPA + assets locais / Vite; CSP restritiva fica para um endurecimento futuro.
+    contentSecurityPolicy: false,
+    crossOriginEmbedderPolicy: false,
+  })
+);
+
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
 // Health check não depende do banco, permitindo diagnosticar a Function.
 app.get('/api/health', (_request: Request, response: Response) =>
-  response.json({ ok: true })
+  response.json({
+    ok: true,
+    env: process.env.NODE_ENV === 'production' ? 'production' : 'development',
+  })
 );
 
 app.use(async (_request, response, next) => {
@@ -53,6 +65,7 @@ app.use((error: Error, _request: Request, response: Response, _next: () => void)
       error: 'Cada foto pode ter até 25 MB. Tente enviar menos arquivos por vez.',
     });
   }
+  console.error('Erro não tratado:', error);
   response.status(400).json({ error: 'Não foi possível processar a solicitação.' });
 });
 

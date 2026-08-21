@@ -4,6 +4,10 @@ import {
   getAccessOffer,
   getSubscriptionAlert,
 } from './subscription.service.js';
+import {
+  daysUntilMediaPurge,
+  isPastMediaGrace,
+} from './media-cleanup.service.js';
 
 test('produto de acesso possui preço e duração configurados', () => {
   const offer = getAccessOffer();
@@ -18,7 +22,22 @@ test('acesso expirado produz alerta de renovação', () => {
   const alert = getSubscriptionAlert(null, 'EXPIRED');
 
   assert.equal(alert?.level, 'expired');
-  assert.match(alert?.message ?? '', /pagamento/i);
+  assert.match(alert?.message ?? '', /pagamento|fotos/i);
+});
+
+test('alerta expirado avisa sobre remoção de fotos na carência', () => {
+  const alert = getSubscriptionAlert(null, 'EXPIRED', {
+    daysUntilMediaPurge: 12,
+  });
+  assert.match(alert?.message ?? '', /12/);
+  assert.match(alert?.message ?? '', /fotos/i);
+});
+
+test('alerta expirado após carência confirma remoção', () => {
+  const alert = getSubscriptionAlert(null, 'EXPIRED', {
+    daysUntilMediaPurge: 0,
+  });
+  assert.match(alert?.message ?? '', /removidas/i);
 });
 
 test('alertas ficam mais urgentes perto do vencimento', () => {
@@ -26,4 +45,15 @@ test('alertas ficam mais urgentes perto do vencimento', () => {
   assert.equal(getSubscriptionAlert(7, 'ACTIVE')?.level, 'warning');
   assert.equal(getSubscriptionAlert(3, 'ACTIVE')?.level, 'critical');
   assert.equal(getSubscriptionAlert(1, 'ACTIVE')?.level, 'critical');
+});
+
+test('carência de mídia calcula dias até a limpeza', () => {
+  const expiresAt = new Date('2026-01-01T00:00:00.000Z');
+  const now = new Date('2026-01-10T00:00:00.000Z');
+  const days = daysUntilMediaPurge(expiresAt, now);
+  assert.ok(days > 0);
+  assert.equal(isPastMediaGrace(expiresAt, now), false);
+
+  const afterGrace = new Date('2026-03-01T00:00:00.000Z');
+  assert.equal(isPastMediaGrace(expiresAt, afterGrace), true);
 });

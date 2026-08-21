@@ -1,22 +1,33 @@
 import { Router, type Request, type Response } from 'express';
+import { rateLimit } from 'express-rate-limit';
 import { z } from 'zod';
 import { authenticate } from '../middleware/auth.js';
 import { requireRole } from '../middleware/requireRole.js';
 import {
   adminExpireAccess,
   adminGrantAccess,
+  createAdminUser,
   getAdminOverview,
   listAdminGalleries,
   listAdminPayments,
   listAdminUsers,
   setUserStatus,
 } from '../services/admin.service.js';
+import { purgeExpiredUserMedia } from '../services/media-cleanup.service.js';
 import { getAccessOffer } from '../services/subscription.service.js';
-import { formatZodError } from '../utils/validation.js';
+import { formatZodError, registerSchema } from '../utils/validation.js';
 
 const router = Router();
 
-router.use(authenticate, requireRole('ADMIN'));
+const adminLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Muitas solicitações no painel admin. Aguarde um instante.' },
+});
+
+router.use(authenticate, requireRole('ADMIN'), adminLimiter);
 
 function adminError(response: Response, error: unknown) {
   const message =
@@ -55,6 +66,25 @@ router.get('/users', async (_request: Request, response: Response) => {
   } catch (error) {
     console.error('Admin users:', error);
     response.status(500).json({ error: 'Não foi possível listar usuários.' });
+  }
+});
+
+router.post('/users', async (request: Request, response: Response) => {
+  const parsed = registerSchema.safeParse(request.body);
+  if (!parsed.success) {
+    return response
+      .status(400)
+      .json({ error: formatZodError(parsed.error) });
+  }
+
+  try {
+    const user = await createAdminUser(parsed.data);
+    response.status(201).json({
+      user,
+      message: 'Administrador criado com sucesso.',
+    });
+  } catch (error) {
+    adminError(response, error);
   }
 });
 
@@ -136,6 +166,22 @@ router.get('/galleries', async (_request: Request, response: Response) => {
   } catch (error) {
     console.error('Admin galleries:', error);
     response.status(500).json({ error: 'Não foi possível listar galerias.' });
+  }
+});
+
+router.post('/purge-expired-media', async (_request: Request, response: Response) => {
+  try {
+    const result = await purgeExpiredUserMedia({ limit: 20 });
+    response.json({
+      ...result,
+      message:
+        result.purgedUsers > 0
+          ? `Limpeza concluída: ${result.purgedUsers} conta(s) processada(s).`
+          : 'Nenhuma conta pendente de limpeza.',
+    });
+  } catch (error) {
+    console.error('Admin purge media:', error);
+    response.status(500).json({ error: 'Não foi possível limpar a mídia expirada.' });
   }
 });
 

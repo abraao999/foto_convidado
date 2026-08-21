@@ -18,6 +18,8 @@ export interface IUser {
   passwordHash: string;
   role: UserRole;
   status: UserStatus;
+  /** Quando as fotos foram removidas após expiração + carência. */
+  mediaPurgedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -45,6 +47,7 @@ const userSchema = new Schema<IUserDocument>(
     passwordHash: { type: String, required: true, select: false },
     role: { type: String, enum: ['USER', 'ADMIN'], default: 'USER' },
     status: { type: String, enum: ['ACTIVE', 'BLOCKED'], default: 'ACTIVE' },
+    mediaPurgedAt: { type: Date },
   },
   { timestamps: true }
 );

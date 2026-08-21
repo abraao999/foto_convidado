@@ -252,6 +252,12 @@ export const api = {
 
   adminUsers: () => request<{ users: AdminUserRow[] }>('/api/admin/users'),
 
+  adminCreateUser: (body: { name: string; email: string; password: string }) =>
+    request<{ user: AuthUser; message: string }>('/api/admin/users', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
   adminSetUserStatus: (userId: string, status: 'ACTIVE' | 'BLOCKED') =>
     request<{ user: AuthUser; message: string }>(
       `/api/admin/users/${userId}/status`,
@@ -274,6 +280,13 @@ export const api = {
 
   adminGalleries: () =>
     request<{ galleries: AdminGalleryRow[] }>('/api/admin/galleries'),
+
+  adminPurgeExpiredMedia: () =>
+    request<{
+      purgedUsers: number;
+      checked: number;
+      message: string;
+    }>('/api/admin/purge-expired-media', { method: 'POST' }),
 };
 
 export interface AdminOverview {

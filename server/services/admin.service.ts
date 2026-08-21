@@ -12,6 +12,7 @@ import {
   serializeSubscription,
   syncExpiredSubscriptions,
 } from './subscription.service.js';
+import { hashPassword } from '../utils/password.js';
 
 const LIST_LIMIT = 80;
 
@@ -52,6 +53,28 @@ export async function getAdminOverview() {
     photos,
     revenueCents: revenueAgg[0]?.totalCents ?? 0,
   };
+}
+
+export async function createAdminUser(input: {
+  name: string;
+  email: string;
+  password: string;
+}) {
+  const email = input.email.toLowerCase().trim();
+  const existing = await User.findOne({ email });
+  if (existing) {
+    throw new Error('Este e-mail já está cadastrado.');
+  }
+
+  const user = await User.create({
+    name: input.name.trim(),
+    email,
+    passwordHash: await hashPassword(input.password),
+    role: 'ADMIN',
+    status: 'ACTIVE',
+  });
+
+  return serializeUser(user);
 }
 
 export async function listAdminUsers() {
