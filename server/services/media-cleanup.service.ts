@@ -4,6 +4,7 @@ import { Gallery } from '../models/Gallery.js';
 import { Photo } from '../models/Photo.js';
 import { Subscription } from '../models/Subscription.js';
 import { User } from '../models/User.js';
+import { opsLog } from '../utils/ops-log.js';
 import {
   cleanupExpiredUploadParts,
   deleteStoredObject,
@@ -192,6 +193,16 @@ export async function expireDueSubscriptions() {
   return result.modifiedCount;
 }
 
+export async function storageSnapshot() {
+  const [row] = await Photo.aggregate<{ count: number; bytes: number }>([
+    { $group: { _id: null, count: { $sum: 1 }, bytes: { $sum: '$size' } } },
+  ]);
+  return {
+    photoCount: row?.count ?? 0,
+    totalBytes: row?.bytes ?? 0,
+  };
+}
+
 /** Job diário: expira assinaturas, apaga mídia fora da carência e limpa tmp do R2. */
 export async function runScheduledCleanup(options?: { limit?: number }) {
   const expiredSubscriptions = await expireDueSubscriptions();
@@ -207,9 +218,21 @@ export async function runScheduledCleanup(options?: { limit?: number }) {
     console.error('Falha ao limpar partes temporárias de upload:', error);
   }
 
+  let storage = { photoCount: 0, totalBytes: 0 };
+  try {
+    storage = await storageSnapshot();
+  } catch (error) {
+    opsLog(
+      'storage_snapshot_failed',
+      { message: error instanceof Error ? error.message : 'snapshot_error' },
+      'warn'
+    );
+  }
+
   return {
     expiredSubscriptions,
     tmpPartsDeleted,
+    storage,
     ...purge,
   };
 }

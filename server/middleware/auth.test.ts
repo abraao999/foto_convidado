@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { sessionMatchesUser } from '../middleware/auth.js';
 import type { IUserDocument } from '../models/User.js';
-import { jwtExpiresInMs, type JwtPayload } from '../utils/jwt.js';
+import { jwtExpiresInMs, cookieOptions, type JwtPayload } from '../utils/jwt.js';
 
 describe('sessionMatchesUser', () => {
   it('aceita token sem tv para usuário sem tokenVersion (legado)', () => {
@@ -31,6 +31,15 @@ describe('jwtExpiresInMs', () => {
     assert.equal(jwtExpiresInMs(), 7 * 24 * 60 * 60 * 1000);
     process.env.JWT_EXPIRES_IN = '12h';
     assert.equal(jwtExpiresInMs(), 12 * 60 * 60 * 1000);
+    if (prev === undefined) delete process.env.JWT_EXPIRES_IN;
+    else process.env.JWT_EXPIRES_IN = prev;
+  });
+
+  it('cookie maxAge segue JWT_EXPIRES_IN', () => {
+    const prev = process.env.JWT_EXPIRES_IN;
+    process.env.JWT_EXPIRES_IN = '2d';
+    assert.equal(cookieOptions().maxAge, jwtExpiresInMs());
+    assert.equal(cookieOptions().maxAge, 2 * 24 * 60 * 60 * 1000);
     if (prev === undefined) delete process.env.JWT_EXPIRES_IN;
     else process.env.JWT_EXPIRES_IN = prev;
   });

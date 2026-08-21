@@ -8,6 +8,7 @@ import {
   serializePayment,
 } from '../services/payment.service.js';
 import { validateMercadoPagoWebhook } from '../services/mercadopago.service.js';
+import { opsLog } from '../utils/ops-log.js';
 
 const router = Router();
 
@@ -91,10 +92,14 @@ router.post(
         dataId,
       });
     } catch (error) {
-      console.warn('Webhook do Mercado Pago rejeitado:', {
-        requestId: request.headers['x-request-id'],
-        reason: error instanceof Error ? error.name : 'invalid_signature',
-      });
+      opsLog(
+        'webhook_rejected',
+        {
+          requestId: request.headers['x-request-id'],
+          reason: error instanceof Error ? error.message : 'invalid_signature',
+        },
+        'warn'
+      );
       return response.status(401).json({ error: 'Assinatura inválida.' });
     }
 
@@ -109,15 +114,24 @@ router.post(
 
     try {
       const payment = await processMercadoPagoPayment(dataId);
+      opsLog('webhook_ok', {
+        externalPaymentId: dataId,
+        paymentId: payment?._id.toString(),
+        status: payment?.status,
+      });
       response.status(200).json({
         ok: true,
         paymentId: payment?._id.toString(),
       });
     } catch (error) {
-      console.error('Falha ao processar webhook do Mercado Pago:', {
-        externalPaymentId: dataId,
-        error,
-      });
+      opsLog(
+        'webhook_failed',
+        {
+          externalPaymentId: dataId,
+          message: error instanceof Error ? error.message : 'webhook_error',
+        },
+        'error'
+      );
       // O 500 solicita que o Mercado Pago tente a notificação novamente.
       response
         .status(500)

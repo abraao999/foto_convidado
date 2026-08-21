@@ -30,6 +30,7 @@ import {
   isHeicPhoto,
   streamToBuffer,
 } from '../utils/image-preview.js';
+import { opsLog } from '../utils/ops-log.js';
 import { canAcceptGalleryUploads } from './subscription.service.js';
 
 export { hasValidImageSignature };
@@ -577,6 +578,7 @@ export async function buildOwnedGalleryZip(input: {
   uploadDone.catch(() => undefined);
 
   const deadline = Date.now() + platformConfig.zipBuildDeadlineMs;
+  const startedAt = Date.now();
 
   try {
     for (let index = 0; index < photos.length; index += 1) {
@@ -607,6 +609,17 @@ export async function buildOwnedGalleryZip(input: {
     } catch {
       // órfão será limpo pelo cron de tmp/zips
     }
+    opsLog(
+      'zip_failed',
+      {
+        galleryId: input.galleryId,
+        photoCount: photos.length,
+        totalBytes,
+        durationMs: Date.now() - startedAt,
+        message: error instanceof Error ? error.message : 'zip_error',
+      },
+      'error'
+    );
     throw error;
   }
 
@@ -616,6 +629,13 @@ export async function buildOwnedGalleryZip(input: {
     expiresInSeconds,
     fileName
   );
+
+  opsLog('zip_built', {
+    galleryId: input.galleryId,
+    photoCount: photos.length,
+    totalBytes,
+    durationMs: Date.now() - startedAt,
+  });
 
   return {
     downloadUrl,

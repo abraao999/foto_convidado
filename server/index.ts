@@ -13,6 +13,12 @@ import profileRoutes from './routes/profile.routes.js';
 import publicRoutes from './routes/public.routes.js';
 import subscriptionsRoutes from './routes/subscriptions.routes.js';
 import internalRoutes from './routes/internal.routes.js';
+import {
+  getEnvStatus,
+  isProductionEnv,
+  missingEnvKeys,
+} from './config/env-status.js';
+import { opsLog } from './utils/ops-log.js';
 
 const app = express();
 
@@ -22,8 +28,17 @@ app.set('trust proxy', 1);
 
 app.use(
   helmet({
-    // SPA + assets locais / Vite; CSP restritiva fica para um endurecimento futuro.
-    contentSecurityPolicy: false,
+    // CSP da SPA (HTML) fica em vercel.json. Aqui vale só para respostas da API.
+    contentSecurityPolicy: {
+      useDefaults: false,
+      directives: {
+        defaultSrc: ["'none'"],
+        baseUri: ["'none'"],
+        frameAncestors: ["'none'"],
+        objectSrc: ["'none'"],
+        formAction: ["'none'"],
+      },
+    },
     crossOriginEmbedderPolicy: false,
   })
 );
@@ -36,9 +51,20 @@ app.use(cookieParser());
 app.get('/api/health', (_request: Request, response: Response) =>
   response.json({
     ok: true,
-    env: process.env.NODE_ENV === 'production' ? 'production' : 'development',
+    env: isProductionEnv() ? 'production' : 'development',
   })
 );
+
+app.get('/api/health/ready', (_request: Request, response: Response) => {
+  const configured = getEnvStatus();
+  const missing = missingEnvKeys(configured);
+  const env = isProductionEnv() ? 'production' : 'development';
+  if (isProductionEnv() && missing.length > 0) {
+    opsLog('env_ready_fail', { missing }, 'error');
+    return response.status(503).json({ ok: false, env, missing });
+  }
+  return response.json({ ok: true, env, configured });
+});
 
 app.use(async (_request, response, next) => {
   try {
@@ -60,15 +86,23 @@ app.use('/api/public', publicRoutes);
 app.use('/api/subscriptions', subscriptionsRoutes);
 app.use('/api/internal', internalRoutes);
 
-app.use((error: Error, _request: Request, response: Response, _next: () => void) => {
+app.use((error: Error, request: Request, response: Response, _next: () => void) => {
   const code = 'code' in error ? String(error.code) : '';
   if (code === 'LIMIT_FILE_SIZE' || error.message.includes('File too large')) {
     return response.status(413).json({
       error: 'Cada foto pode ter até 25 MB. Tente enviar menos arquivos por vez.',
     });
   }
-  console.error('Erro não tratado:', error);
-  response.status(400).json({ error: 'Não foi possível processar a solicitação.' });
+  opsLog(
+    'http_5xx',
+    {
+      method: request.method,
+      path: request.path,
+      message: error.message,
+    },
+    'error'
+  );
+  response.status(500).json({ error: 'Não foi possível processar a solicitação.' });
 });
 
 export default app;

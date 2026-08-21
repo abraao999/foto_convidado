@@ -49,7 +49,7 @@ npm install
 npm run dev
 ```
 
-Frontend: `http://localhost:5173` · API: `http://localhost:3001` · Health: `/api/health`
+Frontend: `http://localhost:5173` · API: `http://localhost:3001` · Health: `/api/health` · Ready: `/api/health/ready`
 
 ```bash
 npm test
@@ -80,11 +80,15 @@ O bucket permanece privado. Visualização e download passam pelo backend autent
    - `MERCADOPAGO_ACCESS_TOKEN`, `MERCADOPAGO_WEBHOOK_SECRET`
    - `MERCADOPAGO_USE_SANDBOX=false` em produção
 3. No Mercado Pago, aponte o webhook para `https://seu-dominio.com/api/payments/webhook`.
-4. Confirme `/api/health` respondendo `{ ok: true }`.
+4. Confirme `/api/health` → `{ ok: true }` e `/api/health/ready` → `{ ok: true, configured: { ... } }` (em produção, 503 se faltar Mongo, JWT, R2, Mercado Pago, `PUBLIC_URL`, Resend ou `CRON_SECRET`).
 5. Faça login com o e-mail de `ADMIN_EMAIL` (conta admin é criada já verificada) ou crie outro admin em **Administração**.
 6. Não use o filesystem da Vercel para fotos — só R2.
 
-Cookies de sessão usam `httpOnly` + `secure` em produção.
+Cookies de sessão usam `httpOnly` + `secure` em produção. O `maxAge` do cookie segue `JWT_EXPIRES_IN`.
+
+A SPA envia `Content-Security-Policy` (scripts próprios, fontes Google, imagens do R2 e redirect do Mercado Pago). A API usa CSP `default-src 'none'`.
+
+Nos logs da Vercel, filtre por `"event"`: `http_5xx`, `zip_built`, `zip_failed`, `webhook_ok`, `webhook_failed`, `webhook_rejected`, `cron_cleanup`. O cron também registra `photoCount` / `totalBytes` das fotos no Mongo (proxy do uso no R2).
 
 ## Expiração e fotos
 
