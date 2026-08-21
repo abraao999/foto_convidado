@@ -8,8 +8,9 @@ import {
   registerUser,
   requestPasswordReset,
   resetPasswordWithToken,
+  resendEmailVerification,
   serializeUser,
-  buildResetPasswordUrl,
+  verifyEmailWithToken,
 } from '../services/auth.service.js';
 import { AUTH_COOKIE, clearCookieOptions, cookieOptions } from '../utils/jwt.js';
 import {
@@ -19,6 +20,7 @@ import {
   loginSchema,
   registerSchema,
   resetPasswordSchema,
+  verifyEmailSchema,
 } from '../utils/validation.js';
 
 const router = Router();
@@ -47,17 +49,41 @@ const forgotLimiter = rateLimit({
   message: { error: 'Muitos pedidos de recuperação. Tente mais tarde.' },
 });
 
+const verifyLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 12,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Muitos pedidos de confirmação. Tente mais tarde.' },
+});
+
 router.post('/register', authLimiter, async (request: Request, response: Response) => {
   const parsed = registerSchema.safeParse(request.body);
   if (!parsed.success) return response.status(400).json({ error: formatZodError(parsed.error) });
 
   try {
-    const user = await registerUser(parsed.data);
-    const token = createSessionToken(user);
+    const result = await registerUser(parsed.data);
+
+    if (result.verificationRequired) {
+      return response.status(201).json({
+        verificationRequired: true,
+        email: result.user.email,
+        message:
+          'Conta criada. Enviamos um link de confirmação para o seu e-mail. Confirme antes de entrar.',
+      });
+    }
+
+    const token = createSessionToken(result.user);
     response.cookie(AUTH_COOKIE, token, cookieOptions());
-    response.status(201).json({ user: serializeUser(user) });
+    response.status(201).json({
+      verificationRequired: false,
+      user: serializeUser(result.user),
+      message: 'Conta criada com sucesso.',
+    });
   } catch (error) {
-    response.status(400).json({ error: error instanceof Error ? error.message : 'Não foi possível criar a conta.' });
+    response.status(400).json({
+      error: error instanceof Error ? error.message : 'Não foi possível criar a conta.',
+    });
   }
 });
 
@@ -71,7 +97,9 @@ router.post('/login', loginLimiter, async (request: Request, response: Response)
     response.cookie(AUTH_COOKIE, token, cookieOptions());
     response.json({ user: serializeUser(user) });
   } catch (error) {
-    response.status(401).json({ error: error instanceof Error ? error.message : 'Não foi possível entrar.' });
+    response.status(401).json({
+      error: error instanceof Error ? error.message : 'Não foi possível entrar.',
+    });
   }
 });
 
@@ -88,13 +116,10 @@ router.post('/forgot-password', forgotLimiter, async (request: Request, response
   const parsed = forgotPasswordSchema.safeParse(request.body);
   if (!parsed.success) return response.status(400).json({ error: formatZodError(parsed.error) });
 
-  const result = await requestPasswordReset(parsed.data.email);
-
-  if (result) {
-    const resetUrl = buildResetPasswordUrl(result.rawToken);
-    if (process.env.NODE_ENV !== 'production') {
-      console.info('[auth] Link de recuperação de senha:', resetUrl);
-    }
+  try {
+    await requestPasswordReset(parsed.data.email);
+  } catch (error) {
+    console.error('Falha ao processar recuperação de senha:', error);
   }
 
   response.json({
@@ -112,8 +137,49 @@ router.post('/reset-password', authLimiter, async (request: Request, response: R
     response.cookie(AUTH_COOKIE, token, cookieOptions());
     response.json({ user: serializeUser(user), message: 'Senha redefinida com sucesso.' });
   } catch (error) {
-    response.status(400).json({ error: error instanceof Error ? error.message : 'Não foi possível redefinir a senha.' });
+    response.status(400).json({
+      error: error instanceof Error ? error.message : 'Não foi possível redefinir a senha.',
+    });
   }
+});
+
+router.post('/verify-email', verifyLimiter, async (request: Request, response: Response) => {
+  const parsed = verifyEmailSchema.safeParse(request.body);
+  if (!parsed.success) return response.status(400).json({ error: formatZodError(parsed.error) });
+
+  try {
+    const user = await verifyEmailWithToken(parsed.data.token);
+    const token = createSessionToken(user);
+    response.cookie(AUTH_COOKIE, token, cookieOptions());
+    response.json({
+      user: serializeUser(user),
+      message: 'E-mail confirmado com sucesso. Bem-vindo!',
+    });
+  } catch (error) {
+    response.status(400).json({
+      error: error instanceof Error ? error.message : 'Não foi possível confirmar o e-mail.',
+    });
+  }
+});
+
+router.post('/resend-verification', verifyLimiter, async (request: Request, response: Response) => {
+  const parsed = forgotPasswordSchema.safeParse(request.body);
+  if (!parsed.success) return response.status(400).json({ error: formatZodError(parsed.error) });
+
+  try {
+    const result = await resendEmailVerification(parsed.data.email);
+    if (result?.alreadyVerified) {
+      return response.json({
+        message: 'Este e-mail já está confirmado. Você pode entrar normalmente.',
+      });
+    }
+  } catch (error) {
+    console.error('Falha ao reenviar confirmação de e-mail:', error);
+  }
+
+  response.json({
+    message: 'Se o e-mail estiver cadastrado e pendente, enviaremos um novo link de confirmação.',
+  });
 });
 
 router.post('/change-password', authenticate, async (request: Request, response: Response) => {
@@ -130,7 +196,9 @@ router.post('/change-password', authenticate, async (request: Request, response:
     response.cookie(AUTH_COOKIE, token, cookieOptions());
     response.json({ user: serializeUser(user), message: 'Senha alterada com sucesso.' });
   } catch (error) {
-    response.status(400).json({ error: error instanceof Error ? error.message : 'Não foi possível alterar a senha.' });
+    response.status(400).json({
+      error: error instanceof Error ? error.message : 'Não foi possível alterar a senha.',
+    });
   }
 });
 

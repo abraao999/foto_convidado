@@ -29,9 +29,18 @@ ADMIN_EMAIL=seu-email@exemplo.com
 PUBLIC_URL=https://seu-dominio.com
 MERCADOPAGO_ACCESS_TOKEN=...
 MERCADOPAGO_WEBHOOK_SECRET=...
+RESEND_API_KEY=re_...
+EMAIL_FROM=Foto Convidado <onboarding@resend.dev>
 ```
 
 Pode remover variáveis `GOOGLE_*` — o app não usa mais Google Drive.
+
+### E-mail (confirmação e recuperação)
+
+1. Crie uma conta em [Resend](https://resend.com/) e gere uma API key.
+2. Em desenvolvimento, sem `RESEND_API_KEY`, os links de confirmação/recuperação são impressos no **console do servidor**.
+3. Em produção, `RESEND_API_KEY` é **obrigatória**. Use um domínio verificado no `EMAIL_FROM` (o endereço `onboarding@resend.dev` só serve para testes).
+4. Fluxo: cadastro → e-mail de confirmação → só então o login é liberado. Recuperação de senha também vai por e-mail.
 
 ## Rodar localmente
 
@@ -65,12 +74,13 @@ O bucket permanece privado. Visualização e download passam pelo backend autent
    - `NODE_ENV=production`
    - `PUBLIC_URL=https://seu-dominio.com` (sem barra final)
    - `MONGODB_URI`, `JWT_SECRET`, `ADMIN_EMAIL`
+   - `RESEND_API_KEY`, `EMAIL_FROM` (domínio verificado no Resend)
    - `R2_*` (bucket **privado**)
    - `MERCADOPAGO_ACCESS_TOKEN`, `MERCADOPAGO_WEBHOOK_SECRET`
    - `MERCADOPAGO_USE_SANDBOX=false` em produção
 3. No Mercado Pago, aponte o webhook para `https://seu-dominio.com/api/payments/webhook`.
 4. Confirme `/api/health` respondendo `{ ok: true }`.
-5. Faça login com o e-mail de `ADMIN_EMAIL` (ou crie outro admin em **Administração**).
+5. Faça login com o e-mail de `ADMIN_EMAIL` (conta admin é criada já verificada) ou crie outro admin em **Administração**.
 6. Não use o filesystem da Vercel para fotos — só R2.
 
 Cookies de sessão usam `httpOnly` + `secure` em produção.

@@ -7,6 +7,7 @@ import Login from './pages/auth/Login';
 import Register from './pages/auth/Register';
 import ForgotPassword from './pages/auth/ForgotPassword';
 import ResetPassword from './pages/auth/ResetPassword';
+import VerifyEmail from './pages/auth/VerifyEmail';
 import DashboardHome from './pages/dashboard/DashboardHome';
 import AdminPage from './pages/dashboard/AdminPage';
 import DownloadsPage from './pages/dashboard/DownloadsPage';
@@ -45,6 +46,7 @@ export default function AppRouter() {
           <Route path="/" element={<Landing />} />
           <Route path="/login" element={<Login />} />
           <Route path="/cadastro" element={<Register />} />
+          <Route path="/verificar-email" element={<VerifyEmail />} />
           <Route path="/recuperar-senha" element={<ForgotPassword />} />
           <Route path="/redefinir-senha" element={<ResetPassword />} />
           <Route

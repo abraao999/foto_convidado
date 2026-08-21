@@ -72,6 +72,7 @@ export async function createAdminUser(input: {
     passwordHash: await hashPassword(input.password),
     role: 'ADMIN',
     status: 'ACTIVE',
+    emailVerifiedAt: new Date(),
   });
 
   return serializeUser(user);

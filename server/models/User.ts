@@ -18,6 +18,12 @@ export interface IUser {
   passwordHash: string;
   role: UserRole;
   status: UserStatus;
+  /**
+   * null = cadastro aguardando confirmação.
+   * Date = e-mail confirmado.
+   * undefined em documentos antigos = tratado como já verificado (compatibilidade).
+   */
+  emailVerifiedAt?: Date | null;
   /** Quando as fotos foram removidas após expiração + carência. */
   mediaPurgedAt?: Date;
   createdAt: Date;
@@ -47,6 +53,7 @@ const userSchema = new Schema<IUserDocument>(
     passwordHash: { type: String, required: true, select: false },
     role: { type: String, enum: ['USER', 'ADMIN'], default: 'USER' },
     status: { type: String, enum: ['ACTIVE', 'BLOCKED'], default: 'ACTIVE' },
+    emailVerifiedAt: { type: Date, default: undefined },
     mediaPurgedAt: { type: Date },
   },
   { timestamps: true }

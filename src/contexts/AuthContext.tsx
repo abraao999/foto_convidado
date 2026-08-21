@@ -1,13 +1,20 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { api, type AuthUser } from '../api/client';
 
+interface RegisterResult {
+  verificationRequired: boolean;
+  email?: string;
+  message: string;
+}
+
 interface AuthContextValue {
   user: AuthUser | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  register: (name: string, email: string, password: string) => Promise<void>;
+  register: (name: string, email: string, password: string) => Promise<RegisterResult>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
+  setUser: (user: AuthUser | null) => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -35,8 +42,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const register = useCallback(async (name: string, email: string, password: string) => {
-    const { user: created } = await api.register({ name, email, password });
-    setUser(created);
+    const result = await api.register({ name, email, password });
+    if (!result.verificationRequired && result.user) {
+      setUser(result.user);
+    }
+    return {
+      verificationRequired: result.verificationRequired,
+      email: result.email ?? email,
+      message: result.message,
+    };
   }, []);
 
   const logout = useCallback(async () => {
@@ -45,7 +59,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ user, loading, login, register, logout, refreshUser }),
+    () => ({ user, loading, login, register, logout, refreshUser, setUser }),
     [user, loading, login, register, logout, refreshUser]
   );
 

@@ -1,6 +1,11 @@
 import { FormEvent, useState } from 'react';
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { api } from '../../api/client';
 import { useAuth } from '../../contexts/AuthContext';
+
+function isUnverifiedError(message: string) {
+  return message.toLowerCase().includes('confirme seu e-mail');
+}
 
 export default function Login() {
   const { login, user } = useAuth();
@@ -10,7 +15,10 @@ export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [resending, setResending] = useState(false);
+  const [needsVerification, setNeedsVerification] = useState(false);
 
   if (user) return <Navigate to={from} replace />;
 
@@ -18,13 +26,30 @@ export default function Login() {
     event.preventDefault();
     setSubmitting(true);
     setError(null);
+    setInfo(null);
+    setNeedsVerification(false);
     try {
       await login(email, password);
       navigate(from, { replace: true });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Não foi possível entrar.');
+      const message = err instanceof Error ? err.message : 'Não foi possível entrar.';
+      setError(message);
+      setNeedsVerification(isUnverifiedError(message));
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function onResend() {
+    setResending(true);
+    setError(null);
+    try {
+      const result = await api.resendVerification({ email });
+      setInfo(result.message);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Não foi possível reenviar o e-mail.');
+    } finally {
+      setResending(false);
     }
   }
 
@@ -41,12 +66,24 @@ export default function Login() {
           </label>
           <label>
             Senha
-            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required autoComplete="current-password" />
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              autoComplete="current-password"
+            />
           </label>
           {error && <p className="status error">{error}</p>}
+          {info && <p className="status success">{info}</p>}
           <button type="submit" className="send-button" disabled={submitting}>
             {submitting ? 'Entrando…' : 'Entrar'}
           </button>
+          {needsVerification && (
+            <button type="button" className="ghost-button" onClick={onResend} disabled={resending || !email}>
+              {resending ? 'Reenviando…' : 'Reenviar e-mail de confirmação'}
+            </button>
+          )}
         </form>
         <p className="auth-links">
           <Link to="/recuperar-senha">Esqueci minha senha</Link>

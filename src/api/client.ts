@@ -17,6 +17,7 @@ export interface AuthUser {
   publicSlug?: string;
   role: 'USER' | 'ADMIN';
   status: 'ACTIVE' | 'BLOCKED';
+  emailVerified?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -46,7 +47,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   register: (body: { name: string; email: string; password: string }) =>
-    request<{ user: AuthUser }>('/api/auth/register', { method: 'POST', body: JSON.stringify(body) }),
+    request<{
+      user?: AuthUser;
+      verificationRequired: boolean;
+      email?: string;
+      message: string;
+    }>('/api/auth/register', { method: 'POST', body: JSON.stringify(body) }),
 
   login: (body: { email: string; password: string }) =>
     request<{ user: AuthUser }>('/api/auth/login', { method: 'POST', body: JSON.stringify(body) }),
@@ -60,6 +66,18 @@ export const api = {
 
   resetPassword: (body: { token: string; password: string }) =>
     request<{ user: AuthUser; message: string }>('/api/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  verifyEmail: (body: { token: string }) =>
+    request<{ user: AuthUser; message: string }>('/api/auth/verify-email', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  resendVerification: (body: { email: string }) =>
+    request<{ message: string }>('/api/auth/resend-verification', {
       method: 'POST',
       body: JSON.stringify(body),
     }),

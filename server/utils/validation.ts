@@ -20,6 +20,10 @@ export const resetPasswordSchema = z.object({
   password: z.string().min(8, 'A senha deve ter pelo menos 8 caracteres.').max(128),
 });
 
+export const verifyEmailSchema = z.object({
+  token: z.string().min(1, 'Token inválido.'),
+});
+
 export const changePasswordSchema = z.object({
   currentPassword: z.string().min(1, 'Informe a senha atual.'),
   newPassword: z.string().min(8, 'A nova senha deve ter pelo menos 8 caracteres.').max(128),
