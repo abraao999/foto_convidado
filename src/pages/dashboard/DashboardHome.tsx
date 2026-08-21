@@ -8,12 +8,14 @@ import {
   type SubscriptionSummary,
 } from '../../types/subscription';
 import type { PhotoStats } from '../../types/photo';
+import type { PlanningSummary } from '../../types/planning';
 
 export default function DashboardHome() {
   const { user } = useAuth();
   const [summary, setSummary] = useState<SubscriptionSummary | null>(null);
   const [galleryCount, setGalleryCount] = useState(0);
   const [photoStats, setPhotoStats] = useState<PhotoStats | null>(null);
+  const [planning, setPlanning] = useState<PlanningSummary | null>(null);
 
   useEffect(() => {
     Promise.all([
@@ -25,6 +27,15 @@ export default function DashboardHome() {
         setSummary(subscription);
         setGalleryCount(galleryResult.galleries.length);
         setPhotoStats(photos);
+        const first = galleryResult.galleries.find(
+          (gallery) => gallery.status !== 'ARCHIVED'
+        );
+        if (first) {
+          return api
+            .getPlanningSummary(first.id)
+            .then(setPlanning)
+            .catch(() => undefined);
+        }
       })
       .catch(() => setSummary(null));
   }, []);
@@ -73,6 +84,37 @@ export default function DashboardHome() {
           <small>{sub?.expiresAt ? `até ${formatDate(sub.expiresAt)}` : 'sem acesso'}</small>
         </article>
       </section>
+
+      {planning && (
+        <section className="metric-grid planning-metrics">
+          <article className="metric-card">
+            <span>Convidados</span>
+            <strong>{planning.guests.total}</strong>
+            <small>{planning.guests.confirmed} confirmados</small>
+          </article>
+          <article className="metric-card">
+            <span>Pessoas confirmadas</span>
+            <strong>{planning.guests.confirmedPeople}</strong>
+            <small>
+              {planning.guests.declined} recusaram · {planning.guests.pending} pendentes
+            </small>
+          </article>
+          <article className="metric-card">
+            <span>Mesas</span>
+            <strong>{planning.tables.count}</strong>
+            <small>
+              {planning.tables.occupied}/{planning.tables.seats} lugares
+            </small>
+          </article>
+          <article className="metric-card">
+            <span>Presentes</span>
+            <strong>{planning.gifts.total}</strong>
+            <small>
+              {planning.gifts.purchased} comprados · {planning.gifts.available} disponíveis
+            </small>
+          </article>
+        </section>
+      )}
 
       <section className="dashboard-grid dashboard-details">
         <article className="dashboard-card">

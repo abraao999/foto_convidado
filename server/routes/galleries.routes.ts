@@ -13,6 +13,7 @@ import {
   setGalleryPublication,
   updateGallery,
 } from '../services/gallery.service.js';
+import { getPlanningSummary } from '../services/table.service.js';
 import { openStoredFile } from '../services/storage-read.service.js';
 import { formatZodError } from '../utils/validation.js';
 
@@ -212,6 +213,22 @@ router.post(
         gallery: serializeGallery(gallery),
         message: 'Galeria retirada do público.',
       });
+    } catch (error) {
+      galleryError(response, error);
+    }
+  }
+);
+
+router.get(
+  '/:galleryId/planning',
+  authenticate,
+  async (request: Request, response: Response) => {
+    try {
+      const summary = await getPlanningSummary(
+        request.user!._id.toString(),
+        galleryIdFrom(request)
+      );
+      response.json(summary);
     } catch (error) {
       galleryError(response, error);
     }

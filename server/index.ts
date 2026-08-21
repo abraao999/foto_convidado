@@ -11,7 +11,11 @@ import paymentsRoutes from './routes/payments.routes.js';
 import photosRoutes from './routes/photos.routes.js';
 import profileRoutes from './routes/profile.routes.js';
 import publicRoutes from './routes/public.routes.js';
+import publicInviteRoutes from './routes/public-invite.routes.js';
 import subscriptionsRoutes from './routes/subscriptions.routes.js';
+import guestsRoutes from './routes/guests.routes.js';
+import giftsRoutes from './routes/gifts.routes.js';
+import tablesRoutes from './routes/tables.routes.js';
 import internalRoutes from './routes/internal.routes.js';
 import {
   getEnvStatus,
@@ -79,10 +83,14 @@ app.use(async (_request, response, next) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/galleries', galleriesRoutes);
+app.use('/api/galleries/:galleryId/guests', guestsRoutes);
+app.use('/api/galleries/:galleryId/gifts', giftsRoutes);
+app.use('/api/galleries/:galleryId/tables', tablesRoutes);
 app.use('/api/payments', paymentsRoutes);
 app.use('/api/photos', photosRoutes);
 app.use('/api/profile', profileRoutes);
 app.use('/api/public', publicRoutes);
+app.use('/api/public', publicInviteRoutes);
 app.use('/api/subscriptions', subscriptionsRoutes);
 app.use('/api/internal', internalRoutes);
 

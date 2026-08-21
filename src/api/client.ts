@@ -2,6 +2,14 @@ import type { AccessOffer, SubscriptionInfo, SubscriptionSummary } from '../type
 import type { PaymentInfo } from '../types/payment';
 import type { GalleryInfo } from '../types/gallery';
 import type { PhotoInfo, PhotoStats } from '../types/photo';
+import type { GuestInfo, GuestListFilter, GuestStats } from '../types/guest';
+import type { GiftInfo, GiftOffer } from '../types/gift';
+import type {
+  PlanningSummary,
+  SeatedGuest,
+  TableInfo,
+  UnconfirmedGuest,
+} from '../types/planning';
 
 export interface AuthUser {
   id: string;
@@ -225,6 +233,206 @@ export const api = {
 
   getPayments: () =>
     request<{ payments: PaymentInfo[] }>('/api/payments/me'),
+
+  getGuests: (galleryId: string, filter: GuestListFilter = 'all', q = '') =>
+    request<{ guests: GuestInfo[]; stats: GuestStats }>(
+      `/api/galleries/${galleryId}/guests?filter=${filter}&q=${encodeURIComponent(q)}`
+    ),
+
+  createGuest: (
+    galleryId: string,
+    body: {
+      fullName: string;
+      phone: string;
+      email?: string;
+      maxCompanions?: number;
+      notes?: string;
+      inviteMessage?: string;
+    }
+  ) =>
+    request<{ guest: GuestInfo; message: string }>(
+      `/api/galleries/${galleryId}/guests`,
+      { method: 'POST', body: JSON.stringify(body) }
+    ),
+
+  updateGuest: (
+    galleryId: string,
+    guestId: string,
+    body: Record<string, unknown>
+  ) =>
+    request<{ guest: GuestInfo; message: string }>(
+      `/api/galleries/${galleryId}/guests/${guestId}`,
+      { method: 'PATCH', body: JSON.stringify(body) }
+    ),
+
+  markGuestInviteSent: (galleryId: string, guestId: string) =>
+    request<{ guest: GuestInfo; message: string }>(
+      `/api/galleries/${galleryId}/guests/${guestId}/mark-sent`,
+      { method: 'POST' }
+    ),
+
+  deleteGuest: (galleryId: string, guestId: string) =>
+    request<{ message: string }>(
+      `/api/galleries/${galleryId}/guests/${guestId}`,
+      { method: 'DELETE' }
+    ),
+
+  getGifts: (galleryId: string) =>
+    request<{ gifts: GiftInfo[] }>(`/api/galleries/${galleryId}/gifts`),
+
+  createGift: (galleryId: string, body: Record<string, unknown>) =>
+    request<{ gift: GiftInfo; message: string }>(
+      `/api/galleries/${galleryId}/gifts`,
+      { method: 'POST', body: JSON.stringify(body) }
+    ),
+
+  updateGift: (galleryId: string, giftId: string, body: Record<string, unknown>) =>
+    request<{ gift: GiftInfo; message: string }>(
+      `/api/galleries/${galleryId}/gifts/${giftId}`,
+      { method: 'PATCH', body: JSON.stringify(body) }
+    ),
+
+  deleteGift: (galleryId: string, giftId: string) =>
+    request<{ message: string }>(
+      `/api/galleries/${galleryId}/gifts/${giftId}`,
+      { method: 'DELETE' }
+    ),
+
+  searchGiftOffers: (galleryId: string, query: string) =>
+    request<{ offers: GiftOffer[]; providers: string[]; queriedAt: string }>(
+      `/api/galleries/${galleryId}/gifts/search`,
+      { method: 'POST', body: JSON.stringify({ query }) }
+    ),
+
+  refreshGiftPrice: (galleryId: string, giftId: string) =>
+    request<{ gift: GiftInfo; message: string }>(
+      `/api/galleries/${galleryId}/gifts/${giftId}/refresh-price`,
+      { method: 'POST' }
+    ),
+
+  applyGiftOffer: (galleryId: string, giftId: string, offer: GiftOffer) =>
+    request<{ gift: GiftInfo; message: string }>(
+      `/api/galleries/${galleryId}/gifts/${giftId}/apply-offer`,
+      { method: 'POST', body: JSON.stringify(offer) }
+    ),
+
+  getTables: (galleryId: string) =>
+    request<{
+      tables: TableInfo[];
+      guests: SeatedGuest[];
+      unconfirmed: UnconfirmedGuest[];
+    }>(`/api/galleries/${galleryId}/tables`),
+
+  generateTables: (galleryId: string, count: number, seatsPerTable: number) =>
+    request<{
+      tables: TableInfo[];
+      guests: SeatedGuest[];
+      unconfirmed: UnconfirmedGuest[];
+      message: string;
+    }>(`/api/galleries/${galleryId}/tables/generate`, {
+      method: 'POST',
+      body: JSON.stringify({ count, seatsPerTable }),
+    }),
+
+  createTable: (galleryId: string, body: { name?: string; seats: number; notes?: string }) =>
+    request<{ table: TableInfo; message: string }>(
+      `/api/galleries/${galleryId}/tables`,
+      { method: 'POST', body: JSON.stringify(body) }
+    ),
+
+  updateTable: (
+    galleryId: string,
+    tableId: string,
+    body: { name?: string; seats?: number; notes?: string }
+  ) =>
+    request<{ table: TableInfo; message: string }>(
+      `/api/galleries/${galleryId}/tables/${tableId}`,
+      { method: 'PATCH', body: JSON.stringify(body) }
+    ),
+
+  assignGuestToTable: (galleryId: string, tableId: string, guestId: string) =>
+    request<{
+      tables: TableInfo[];
+      guests: SeatedGuest[];
+      unconfirmed: UnconfirmedGuest[];
+    }>(
+      `/api/galleries/${galleryId}/tables/${tableId}/guests`,
+      { method: 'POST', body: JSON.stringify({ guestId }) }
+    ),
+
+  unassignGuestFromTable: (galleryId: string, tableId: string, guestId: string) =>
+    request<{
+      tables: TableInfo[];
+      guests: SeatedGuest[];
+      unconfirmed: UnconfirmedGuest[];
+    }>(
+      `/api/galleries/${galleryId}/tables/${tableId}/guests/${guestId}`,
+      { method: 'DELETE' }
+    ),
+
+  deleteTable: (galleryId: string, tableId: string) =>
+    request<{ message: string }>(
+      `/api/galleries/${galleryId}/tables/${tableId}`,
+      { method: 'DELETE' }
+    ),
+
+  getPlanningSummary: (galleryId: string) =>
+    request<PlanningSummary>(`/api/galleries/${galleryId}/planning`),
+
+  getPublicInvitation: (token: string, slug?: string) =>
+    request<{
+      guest: {
+        fullName: string;
+        maxCompanions: number;
+        attendanceStatus: string;
+        confirmedCompanionCount: number;
+        bringingChildren?: boolean;
+        childCount?: number;
+        childAges?: number[];
+        inviteMessage?: string;
+      };
+      event: {
+        title: string;
+        description?: string;
+        eventDate?: string;
+        location?: string;
+        slug: string;
+        coverUrl?: string;
+      };
+    }>(
+      `/api/public/invitations/${token}${slug ? `?slug=${encodeURIComponent(slug)}` : ''}`
+    ),
+
+  submitPublicRsvp: (
+    token: string,
+    body: {
+      attending: boolean;
+      companionCount?: number;
+      bringingChildren?: boolean;
+      childCount?: number;
+      childAges?: number[];
+    }
+  ) =>
+    request<{
+      attendanceStatus: string;
+      confirmedCompanionCount: number;
+      bringingChildren?: boolean;
+      childCount?: number;
+      childAges?: number[];
+      message: string;
+    }>(`/api/public/invitations/${token}/rsvp`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  getPublicGifts: (token: string) =>
+    request<{ gifts: GiftInfo[] }>(`/api/public/invitations/${token}/gifts`),
+
+  purchasePublicGift: (token: string, giftId: string) =>
+    request<{ gift: GiftInfo; message: string }>(
+      `/api/public/invitations/${token}/gifts/${giftId}/purchase`,
+      { method: 'POST' }
+    ),
 
   adminOverview: () => request<AdminOverview>('/api/admin/overview'),
 

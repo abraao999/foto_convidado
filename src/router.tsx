@@ -18,7 +18,11 @@ import ProfilePage from './pages/dashboard/ProfilePage';
 import SettingsPage from './pages/dashboard/SettingsPage';
 import SubscriptionPage from './pages/dashboard/SubscriptionPage';
 import GuestGalleryUploadPage from './pages/GuestGalleryUploadPage';
+import PublicInvitePage from './pages/PublicInvitePage';
 import Landing from './pages/Landing';
+import GuestsPage from './pages/dashboard/GuestsPage';
+import GiftListPage from './pages/dashboard/GiftListPage';
+import TablesPage from './pages/dashboard/TablesPage';
 
 function AuthenticatedApp() {
   return (
@@ -40,6 +44,7 @@ export default function AppRouter() {
         <Route path="/galeria/:slug/enviar" element={<GuestGalleryUploadPage />} />
         <Route path="/galeria/:slug" element={<GuestUploadRedirect />} />
         <Route path="/galeria/:slug/download" element={<GuestUploadRedirect />} />
+        <Route path="/evento/:slug/convite/:token" element={<PublicInvitePage />} />
         <Route path="/enviar" element={<Navigate to="/" replace />} />
 
         <Route element={<AuthenticatedApp />}>
@@ -63,6 +68,9 @@ export default function AppRouter() {
             <Route path="/configuracoes" element={<SettingsPage />} />
             <Route path="/eventos" element={<EventsPage />} />
             <Route path="/galerias" element={<Navigate to="/eventos" replace />} />
+            <Route path="/convidados" element={<GuestsPage />} />
+            <Route path="/presentes" element={<GiftListPage />} />
+            <Route path="/mesas" element={<TablesPage />} />
             <Route path="/fotos" element={<PhotosPage />} />
             <Route path="/download" element={<DownloadsPage />} />
             <Route

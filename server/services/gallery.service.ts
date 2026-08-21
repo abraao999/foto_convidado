@@ -81,7 +81,7 @@ export async function createGallery(
   });
 }
 
-async function findOwnedGallery(userId: string, galleryId: string) {
+export async function findOwnedGallery(userId: string, galleryId: string) {
   if (!Types.ObjectId.isValid(galleryId)) {
     throw new Error('Galeria não encontrada.');
   }
