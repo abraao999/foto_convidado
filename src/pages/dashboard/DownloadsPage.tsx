@@ -7,7 +7,7 @@ import PhotoPagination, {
 import type { GalleryInfo } from '../../types/gallery';
 import type { PhotoInfo } from '../../types/photo';
 
-const MAX_ZIP_PHOTOS = 100;
+const MAX_ZIP_PHOTOS = 40;
 
 export default function DownloadsPage() {
   const [galleries, setGalleries] = useState<GalleryInfo[]>([]);
@@ -163,7 +163,7 @@ export default function DownloadsPage() {
         suggestedName
       );
       setMessage(
-        `Se o navegador pedir, escolha onde salvar o ZIP (${selectedPhotos.length} foto(s)).`
+        `Download do ZIP iniciado (${selectedPhotos.length} foto(s)). O link vale por 15 minutos.`
       );
     } catch (err) {
       setError(
@@ -181,8 +181,9 @@ export default function DownloadsPage() {
           <p className="auth-eyebrow">Privado</p>
           <h1>Download</h1>
           <p className="auth-muted">
-            Baixe as fotos do seu evento em ZIP (streaming) ou individualmente.
-            Esta área é exclusiva do dono da galeria.
+            Baixe as fotos do seu evento em ZIP (até {MAX_ZIP_PHOTOS} por arquivo)
+            ou individualmente. O ZIP é gerado no servidor e o download vai direto
+            do armazenamento. Esta área é exclusiva do dono da galeria.
           </p>
         </div>
       </header>

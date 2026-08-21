@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from 'express';
-import { ZipArchive } from 'archiver';
 import { rateLimit } from 'express-rate-limit';
 import { z } from 'zod';
+import { platformConfig } from '../config/platform.js';
 import { authenticate } from '../middleware/auth.js';
 import { requireActiveSubscription } from '../middleware/requireActiveSubscription.js';
 import { openStoredFile } from '../services/storage-read.service.js';
@@ -11,13 +11,12 @@ import {
   streamToBuffer,
 } from '../utils/image-preview.js';
 import {
+  buildOwnedGalleryZip,
   getOwnedPhoto,
-  getOwnedPhotosForZip,
   getUserPhotoStats,
   initPhotoUpload,
   listGalleryPhotos,
   serializePhoto,
-  uniqueZipEntryNames,
   uploadPhotoChunk,
 } from '../services/photo.service.js';
 import { chunkUpload } from '../utils/upload.js';
@@ -60,7 +59,7 @@ const zipSchema = z.object({
     if (Array.isArray(value)) return value;
     if (typeof value === 'string') return [value];
     return value;
-  }, z.array(z.string().trim().min(1).max(64)).min(1).max(100)),
+  }, z.array(z.string().trim().min(1).max(64)).min(1).max(platformConfig.zipMaxPhotos)),
 });
 
 function param(request: Request, name: string) {
@@ -71,19 +70,14 @@ function param(request: Request, name: string) {
 function photoError(response: Response, error: unknown) {
   const message =
     error instanceof Error ? error.message : 'Não foi possível processar as fotos.';
-  const status = message.includes('não encontrada') ? 404 : 400;
+  const status = message.includes('não encontrada')
+    ? 404
+    : message.includes('demorou demais')
+      ? 504
+      : message.includes('grande demais') || message.includes('no máximo')
+        ? 413
+        : 400;
   return response.status(status).json({ error: message });
-}
-
-function zipFileName(title: string) {
-  const slug = title
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 60);
-  return `${slug || 'galeria'}-fotos.zip`;
 }
 
 router.get(
@@ -111,56 +105,12 @@ router.get(
   }
 );
 
-async function streamGalleryZip(
-  request: Request,
-  response: Response,
-  photoIds: string[]
-) {
-  const { gallery, photos } = await getOwnedPhotosForZip({
+async function createGalleryZip(request: Request, photoIds: string[]) {
+  return buildOwnedGalleryZip({
     userId: request.user!._id.toString(),
     galleryId: param(request, 'galleryId'),
     photoIds,
   });
-
-  const entryNames = uniqueZipEntryNames(photos.map((photo) => photo.fileName));
-  const archive = new ZipArchive({ zlib: { level: 5 } });
-  const fileName = zipFileName(gallery.title);
-
-  response.setHeader('Content-Type', 'application/zip');
-  response.setHeader(
-    'Content-Disposition',
-    `attachment; filename="${fileName}"; filename*=UTF-8''${encodeURIComponent(fileName)}`
-  );
-  response.setHeader('Cache-Control', 'no-store');
-  response.setHeader('X-Content-Type-Options', 'nosniff');
-
-  archive.on('error', (error: Error) => {
-    console.error('Falha ao montar ZIP:', error);
-    if (!response.headersSent) {
-      response.status(502).json({ error: 'Não foi possível gerar o ZIP.' });
-    } else {
-      response.destroy(error);
-    }
-  });
-
-  request.on('close', () => {
-    if (!response.writableEnded) {
-      archive.abort();
-    }
-  });
-
-  archive.pipe(response);
-
-  for (let index = 0; index < photos.length; index += 1) {
-    const photo = photos[index]!;
-    if (!photo.storageKey) {
-      throw new Error('Foto sem arquivo no armazenamento.');
-    }
-    const file = await openStoredFile(photo.storageKey);
-    archive.append(file.stream, { name: entryNames[index]! });
-  }
-
-  await archive.finalize();
 }
 
 router.get(
@@ -183,13 +133,9 @@ router.get(
     }
 
     try {
-      await streamGalleryZip(request, response, parsed.data.photoIds);
+      const zip = await createGalleryZip(request, parsed.data.photoIds);
+      response.redirect(302, zip.downloadUrl);
     } catch (error) {
-      if (response.headersSent) {
-        console.error('Falha durante streaming do ZIP:', error);
-        response.destroy();
-        return;
-      }
       photoError(response, error);
     }
   }
@@ -208,13 +154,9 @@ router.post(
     }
 
     try {
-      await streamGalleryZip(request, response, parsed.data.photoIds);
+      const zip = await createGalleryZip(request, parsed.data.photoIds);
+      response.json(zip);
     } catch (error) {
-      if (response.headersSent) {
-        console.error('Falha durante streaming do ZIP:', error);
-        response.destroy();
-        return;
-      }
       photoError(response, error);
     }
   }

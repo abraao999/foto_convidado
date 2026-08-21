@@ -28,6 +28,14 @@ export const platformConfig = {
     2 * 1024 * 1024
   ),
 
+  /** ZIP gerado no R2 e baixado por URL assinada (limite da Function). */
+  zipMaxPhotos: parseEnvInt(process.env.ZIP_MAX_PHOTOS, 40),
+  zipMaxTotalBytes: parseEnvInt(
+    process.env.ZIP_MAX_TOTAL_BYTES,
+    120 * 1024 * 1024
+  ),
+  zipBuildDeadlineMs: parseEnvInt(process.env.ZIP_BUILD_DEADLINE_MS, 50_000),
+
   /** Dias após expiração em que a galeria pública continua visível */
   publicGalleryGraceDays: Number(process.env.PUBLIC_GALLERY_GRACE_DAYS ?? 30),
 

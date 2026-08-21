@@ -174,76 +174,20 @@ export const api = {
     photoIds: string[],
     suggestedName = 'galeria-fotos.zip'
   ) => {
-    const ids = photoIds.join(',');
-    const url = `/api/photos/gallery/${encodeURIComponent(
-      galleryId
-    )}/zip?ids=${encodeURIComponent(ids)}`;
+    const zip = await request<{
+      downloadUrl: string;
+      fileName: string;
+      photoCount: number;
+      expiresInSeconds: number;
+    }>(`/api/photos/gallery/${encodeURIComponent(galleryId)}/zip`, {
+      method: 'POST',
+      body: JSON.stringify({ photoIds }),
+    });
 
-    type SaveFilePicker = (options: {
-      suggestedName?: string;
-      types?: Array<{
-        description: string;
-        accept: Record<string, string[]>;
-      }>;
-    }) => Promise<FileSystemFileHandle>;
-
-    const savePicker = (
-      window as Window & { showSaveFilePicker?: SaveFilePicker }
-    ).showSaveFilePicker;
-
-    if (typeof savePicker === 'function') {
-      let fileHandle: FileSystemFileHandle;
-      try {
-        fileHandle = await savePicker({
-          suggestedName,
-          types: [
-            {
-              description: 'Arquivo ZIP',
-              accept: { 'application/zip': ['.zip'] },
-            },
-          ],
-        });
-      } catch (error) {
-        if (error instanceof DOMException && error.name === 'AbortError') {
-          throw new Error('Download cancelado.');
-        }
-        fileHandle = undefined as unknown as FileSystemFileHandle;
-      }
-
-      if (fileHandle) {
-        const response = await fetch(url, { credentials: 'include' });
-        if (!response.ok) {
-          const data = (await response.json().catch(() => ({}))) as ApiError;
-          throw new Error(
-            data.error ?? data.message ?? 'Não foi possível gerar o ZIP.'
-          );
-        }
-
-        const writable = await fileHandle.createWritable();
-        try {
-          if (response.body) {
-            await response.body.pipeTo(writable);
-          } else {
-            await writable.write(await response.blob());
-            await writable.close();
-          }
-        } catch (error) {
-          try {
-            await writable.abort();
-          } catch {
-            // ignore abort errors
-          }
-          throw error;
-        }
-        return;
-      }
-    }
-
-    // Fallback (Safari/Firefox): navegação GET no documento principal.
-    // Não usa iframe — navegadores modernos bloqueiam download em iframe oculto.
     const anchor = document.createElement('a');
-    anchor.href = url;
+    anchor.href = zip.downloadUrl;
     anchor.rel = 'noopener';
+    anchor.download = zip.fileName || suggestedName;
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();

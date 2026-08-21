@@ -9,6 +9,7 @@ import {
   S3Client,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { Upload } from '@aws-sdk/lib-storage';
 
 function requireEnv(name: string) {
   const value = process.env[name]?.trim();
@@ -73,6 +74,10 @@ export function buildUploadPartKey(sessionToken: string, partNumber: number) {
   return `tmp/uploads/${sessionToken}/part-${String(partNumber).padStart(5, '0')}`;
 }
 
+export function buildZipStorageKey(userId: string, galleryId: string) {
+  return `tmp/zips/${userId}/${galleryId}/${randomUUID()}.zip`;
+}
+
 export function buildCoverStorageKey(
   galleryId: string,
   fileName: string,
@@ -108,26 +113,43 @@ export async function uploadFile(input: {
   return { storageKey: input.storageKey };
 }
 
-/** Envia um stream ao R2 sem materializar o arquivo inteiro em memória. */
+/**
+ * Envia um stream ao R2 via multipart (Upload).
+ * PutObject exige Content-Length; o R2 rejeita stream de tamanho desconhecido.
+ */
+export function startFileStreamUpload(input: {
+  storageKey: string;
+  body: Readable;
+  mimeType: string;
+}) {
+  const { client, bucket } = createR2Client();
+  const upload = new Upload({
+    client,
+    params: {
+      Bucket: bucket,
+      Key: input.storageKey,
+      Body: input.body,
+      ContentType: input.mimeType,
+    },
+    queueSize: 1,
+    partSize: 5 * 1024 * 1024,
+    leavePartsOnError: false,
+  });
+
+  return {
+    done: () => upload.done().then(() => ({ storageKey: input.storageKey })),
+    abort: () => upload.abort(),
+  };
+}
+
 export async function uploadFileStream(input: {
   storageKey: string;
   body: Readable;
   mimeType: string;
   contentLength?: number;
 }) {
-  const { client, bucket } = createR2Client();
-  await client.send(
-    new PutObjectCommand({
-      Bucket: bucket,
-      Key: input.storageKey,
-      Body: input.body,
-      ContentType: input.mimeType,
-      ...(typeof input.contentLength === 'number'
-        ? { ContentLength: input.contentLength }
-        : {}),
-    })
-  );
-  return { storageKey: input.storageKey };
+  const started = startFileStreamUpload(input);
+  return started.done();
 }
 
 /** Concatena objetos R2 em sequência e grava a chave final. */
@@ -198,12 +220,19 @@ export async function deleteExpiredPrefix(input: {
 
 /** Remove partes tmp/uploads deixadas por sessões expiradas ou abortadas. */
 export async function cleanupExpiredUploadParts() {
-  const olderThan = new Date(Date.now() - 45 * 60 * 1000);
-  return deleteExpiredPrefix({
+  const olderThanParts = new Date(Date.now() - 45 * 60 * 1000);
+  const olderThanZips = new Date(Date.now() - 2 * 60 * 60 * 1000);
+  const parts = await deleteExpiredPrefix({
     prefix: 'tmp/uploads/',
-    olderThan,
+    olderThan: olderThanParts,
     maxKeys: 80,
   });
+  const zips = await deleteExpiredPrefix({
+    prefix: 'tmp/zips/',
+    olderThan: olderThanZips,
+    maxKeys: 40,
+  });
+  return { deleted: parts.deleted + zips.deleted };
 }
 
 export async function getObjectStream(storageKey: string) {

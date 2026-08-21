@@ -4,6 +4,8 @@ import { uploadPartKeys } from './r2.service.js';
 import {
   hasValidImageSignature,
   uniqueZipEntryNames,
+  zipBudgetError,
+  zipFileName,
   type PhotoUpload,
 } from './photo.service.js';
 
@@ -43,6 +45,13 @@ test('gera nomes únicos para entradas do ZIP', () => {
     'a-2.jpg',
     'b.png',
   ]);
+});
+
+test('rejeita ZIP acima do limite de fotos ou tamanho', () => {
+  assert.equal(zipBudgetError(1, 1024), null);
+  assert.match(zipBudgetError(999, 1) ?? '', /no máximo/);
+  assert.match(zipBudgetError(1, 999 * 1024 * 1024 * 1024) ?? '', /grande demais/);
+  assert.equal(zipFileName('Casamento Ana & João'), 'casamento-ana-joao-fotos.zip');
 });
 
 test('monta chaves temporárias de upload na ordem das partes', () => {

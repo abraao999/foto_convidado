@@ -1,4 +1,6 @@
 import crypto from 'node:crypto';
+import { PassThrough, type Readable } from 'node:stream';
+import { ZipArchive } from 'archiver';
 import { Types } from 'mongoose';
 import { platformConfig } from '../config/platform.js';
 import { Gallery } from '../models/Gallery.js';
@@ -12,10 +14,14 @@ import {
   assembleStoredParts,
   buildPhotoStorageKey,
   buildUploadPartKey,
+  buildZipStorageKey,
   deleteFile,
+  getSignedDownloadUrl,
+  startFileStreamUpload,
   uploadFile,
   uploadPartKeys,
 } from './r2.service.js';
+import { openStoredFile } from './storage-read.service.js';
 import { hasValidImageSignature } from '../utils/image-signature.js';
 import { canAcceptGalleryUploads } from './subscription.service.js';
 
@@ -407,7 +413,128 @@ export async function getOwnedPhoto(userId: string, photoId: string) {
   });
 }
 
-const MAX_ZIP_PHOTOS = 100;
+export function zipBudgetError(photoCount: number, totalBytes: number) {
+  if (photoCount > platformConfig.zipMaxPhotos) {
+    return `Você pode baixar no máximo ${platformConfig.zipMaxPhotos} fotos por ZIP.`;
+  }
+  if (totalBytes > platformConfig.zipMaxTotalBytes) {
+    const maxMb = Math.round(platformConfig.zipMaxTotalBytes / 1024 / 1024);
+    return `O ZIP ficaria grande demais. Selecione menos fotos (máximo ${maxMb} MB).`;
+  }
+  return null;
+}
+
+export function zipFileName(title: string) {
+  const slug = title
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60);
+  return `${slug || 'galeria'}-fotos.zip`;
+}
+
+function appendZipEntry(
+  archive: ZipArchive,
+  stream: NodeJS.ReadableStream,
+  name: string
+) {
+  return new Promise<void>((resolve, reject) => {
+    const onError = (error: Error) => {
+      stream.removeListener('end', onEnd);
+      reject(error);
+    };
+    const onEnd = () => {
+      stream.removeListener('error', onError);
+      resolve();
+    };
+    stream.once('error', onError);
+    stream.once('end', onEnd);
+    archive.append(stream as Readable, { name });
+  });
+}
+
+export async function buildOwnedGalleryZip(input: {
+  userId: string;
+  galleryId: string;
+  photoIds: string[];
+}) {
+  const { gallery, photos } = await getOwnedPhotosForZip(input);
+  const totalBytes = photos.reduce((sum, photo) => sum + (photo.size ?? 0), 0);
+  const budgetError = zipBudgetError(photos.length, totalBytes);
+  if (budgetError) throw new Error(budgetError);
+
+  const storageKey = buildZipStorageKey(input.userId, gallery._id.toString());
+  const fileName = zipFileName(gallery.title);
+  const entryNames = uniqueZipEntryNames(photos.map((photo) => photo.fileName));
+  const zipStream = new PassThrough();
+  const archive = new ZipArchive({ zlib: { level: 1 } });
+  zipStream.on('error', () => {
+    // Evita uncaughtException se o R2 recusar o stream.
+  });
+  archive.on('error', (error: Error) => {
+    zipStream.destroy(error);
+  });
+  archive.pipe(zipStream);
+
+  const uploaded = startFileStreamUpload({
+    storageKey,
+    body: zipStream,
+    mimeType: 'application/zip',
+  });
+  const uploadDone = uploaded.done();
+  uploadDone.catch(() => undefined);
+
+  const deadline = Date.now() + platformConfig.zipBuildDeadlineMs;
+
+  try {
+    for (let index = 0; index < photos.length; index += 1) {
+      if (Date.now() > deadline) {
+        throw new Error(
+          'A geração do ZIP demorou demais. Selecione menos fotos e tente novamente.'
+        );
+      }
+      const photo = photos[index]!;
+      if (!photo.storageKey) {
+        throw new Error('Foto sem arquivo no armazenamento.');
+      }
+      const file = await openStoredFile(photo.storageKey);
+      await appendZipEntry(archive, file.stream, entryNames[index]!);
+    }
+    await archive.finalize();
+    await uploadDone;
+  } catch (error) {
+    archive.abort();
+    zipStream.destroy();
+    try {
+      await uploaded.abort();
+    } catch {
+      // ignore abort
+    }
+    try {
+      await deleteFile(storageKey);
+    } catch {
+      // órfão será limpo pelo cron de tmp/zips
+    }
+    throw error;
+  }
+
+  const expiresInSeconds = 15 * 60;
+  const downloadUrl = await getSignedDownloadUrl(
+    storageKey,
+    expiresInSeconds,
+    fileName
+  );
+
+  return {
+    downloadUrl,
+    fileName,
+    photoCount: photos.length,
+    totalBytes,
+    expiresInSeconds,
+  };
+}
 
 export function uniqueZipEntryNames(fileNames: string[]) {
   const used = new Map<string, number>();
@@ -433,9 +560,9 @@ export async function getOwnedPhotosForZip(input: {
   if (uniqueIds.length === 0) {
     throw new Error('Selecione ao menos uma foto.');
   }
-  if (uniqueIds.length > MAX_ZIP_PHOTOS) {
+  if (uniqueIds.length > platformConfig.zipMaxPhotos) {
     throw new Error(
-      `Você pode baixar no máximo ${MAX_ZIP_PHOTOS} fotos por ZIP.`
+      `Você pode baixar no máximo ${platformConfig.zipMaxPhotos} fotos por ZIP.`
     );
   }
 
