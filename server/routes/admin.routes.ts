@@ -4,8 +4,10 @@ import { z } from 'zod';
 import { authenticate } from '../middleware/auth.js';
 import { requireRole } from '../middleware/requireRole.js';
 import {
+  ADMIN_LIST_PAGE_SIZE,
   adminExpireAccess,
   adminGrantAccess,
+  adminListPaging,
   createAdminUser,
   getAdminOverview,
   listAdminGalleries,
@@ -40,6 +42,15 @@ function adminError(response: Response, error: unknown) {
   return response.status(status).json({ error: message });
 }
 
+function pagingFromQuery(request: Request) {
+  const page = Number(request.query.page);
+  const limit = Number(request.query.limit);
+  return adminListPaging(
+    Number.isFinite(page) ? page : 1,
+    Number.isFinite(limit) ? limit : ADMIN_LIST_PAGE_SIZE
+  );
+}
+
 function param(request: Request, name: string) {
   const value = request.params[name];
   return Array.isArray(value) ? value[0] : value;
@@ -59,10 +70,10 @@ router.get('/overview', async (_request: Request, response: Response) => {
   }
 });
 
-router.get('/users', async (_request: Request, response: Response) => {
+router.get('/users', async (request: Request, response: Response) => {
   try {
-    const users = await listAdminUsers();
-    response.json({ users });
+    const result = await listAdminUsers(pagingFromQuery(request));
+    response.json(result);
   } catch (error) {
     console.error('Admin users:', error);
     response.status(500).json({ error: 'Não foi possível listar usuários.' });
@@ -123,7 +134,7 @@ router.post(
       const result = await adminGrantAccess(param(request, 'userId'));
       response.status(201).json({
         ...result,
-        message: `Acesso de ${getAccessOffer().durationDays} dias concedido.`,
+        message: `Acesso de ${getAccessOffer().durationDays} dias liberado sem pagamento.`,
       });
     } catch (error) {
       adminError(response, error);
@@ -149,20 +160,20 @@ router.post(
   }
 );
 
-router.get('/payments', async (_request: Request, response: Response) => {
+router.get('/payments', async (request: Request, response: Response) => {
   try {
-    const payments = await listAdminPayments();
-    response.json({ payments });
+    const result = await listAdminPayments(pagingFromQuery(request));
+    response.json(result);
   } catch (error) {
     console.error('Admin payments:', error);
     response.status(500).json({ error: 'Não foi possível listar pagamentos.' });
   }
 });
 
-router.get('/galleries', async (_request: Request, response: Response) => {
+router.get('/galleries', async (request: Request, response: Response) => {
   try {
-    const galleries = await listAdminGalleries();
-    response.json({ galleries });
+    const result = await listAdminGalleries(pagingFromQuery(request));
+    response.json(result);
   } catch (error) {
     console.error('Admin galleries:', error);
     response.status(500).json({ error: 'Não foi possível listar galerias.' });

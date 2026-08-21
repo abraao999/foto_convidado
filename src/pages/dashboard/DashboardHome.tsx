@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../api/client';
-import SubscriptionAlertBanner from '../../components/SubscriptionAlert';
 import {
   formatDate,
   formatStorage,
@@ -43,8 +42,6 @@ export default function DashboardHome() {
           </p>
         </div>
       </header>
-
-      <SubscriptionAlertBanner alert={summary?.alert ?? null} />
 
       <section className="metric-grid">
         <article className="metric-card">

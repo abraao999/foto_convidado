@@ -36,6 +36,7 @@ export default function PhotosPage() {
   const [uploadPercent, setUploadPercent] = useState(0);
   const [dragging, setDragging] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const activeGalleries = useMemo(
@@ -147,6 +148,52 @@ export default function PhotosPage() {
     }
   }
 
+  async function removePhoto(photo: PhotoInfo) {
+    if (
+      !window.confirm(
+        `Apagar "${photo.fileName}"? O arquivo sai do armazenamento e não pode ser recuperado.`
+      )
+    ) {
+      return;
+    }
+    setDeletingId(photo.id);
+    setError(null);
+    setMessage(null);
+    try {
+      await api.deletePhoto(photo.id);
+      setStats((current) =>
+        current
+          ? {
+              ...current,
+              count: Math.max(0, current.count - 1),
+              totalBytes: Math.max(0, current.totalBytes - photo.size),
+            }
+          : current
+      );
+      const nextTotal = Math.max(0, totalPhotos - 1);
+      const lastPage = Math.max(1, Math.ceil(nextTotal / PHOTO_PAGE_SIZE));
+      const nextPage = Math.min(page, lastPage);
+      if (nextPage !== page) {
+        setPage(nextPage);
+      } else if (galleryId) {
+        const refreshed = await api.getGalleryPhotos(
+          galleryId,
+          nextPage,
+          PHOTO_PAGE_SIZE
+        );
+        setPhotos(refreshed.photos);
+        setTotalPhotos(refreshed.total);
+      }
+      setMessage('Foto excluída.');
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'Não foi possível apagar a foto.'
+      );
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   return (
     <main className="panel-page">
       <header className="panel-header">
@@ -155,7 +202,8 @@ export default function PhotosPage() {
           <h1>Fotos</h1>
           <p className="auth-muted">
             Envie e visualize as imagens de cada galeria. Só você tem acesso a
-            esta página.
+            esta página. Com o acesso expirado, o envio para, mas você ainda
+            pode ver, baixar e excluir fotos até a limpeza.
           </p>
         </div>
         {stats && (
@@ -305,12 +353,22 @@ export default function PhotosPage() {
                       <div>
                         <strong title={photo.fileName}>{photo.fileName}</strong>
                         <span>{formatStorage(photo.size)}</span>
-                        <a
-                          className="photo-download-link"
-                          href={`/api/photos/${photo.id}/content?download=1`}
-                        >
-                          Baixar
-                        </a>
+                        <div className="photo-card-actions">
+                          <a
+                            className="photo-download-link"
+                            href={`/api/photos/${photo.id}/content?download=1`}
+                          >
+                            Baixar
+                          </a>
+                          <button
+                            type="button"
+                            className="photo-delete-button"
+                            disabled={deletingId === photo.id}
+                            onClick={() => void removePhoto(photo)}
+                          >
+                            {deletingId === photo.id ? 'Apagando…' : 'Excluir'}
+                          </button>
+                        </div>
                       </div>
                     </article>
                   ))}

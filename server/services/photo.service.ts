@@ -17,6 +17,7 @@ import {
   buildUploadPartKey,
   buildZipStorageKey,
   deleteFile,
+  deleteStoredObject,
   getSignedDownloadUrl,
   startFileStreamUpload,
   uploadFile,
@@ -502,6 +503,28 @@ export async function getOwnedPhoto(userId: string, photoId: string) {
     _id: new Types.ObjectId(photoId),
     userId: new Types.ObjectId(userId),
   });
+}
+
+export async function deleteOwnedPhoto(userId: string, photoId: string) {
+  const photo = await getOwnedPhoto(userId, photoId);
+  if (!photo) throw new Error('Foto não encontrada.');
+
+  if (photo.thumbnailKey) {
+    await deleteStoredObject(photo.thumbnailKey);
+  }
+  if (photo.storageKey) {
+    const removed = await deleteStoredObject(photo.storageKey);
+    if (!removed) {
+      throw new Error('Não foi possível apagar o arquivo no armazenamento. Tente novamente.');
+    }
+  }
+
+  await Photo.deleteOne({
+    _id: photo._id,
+    userId: new Types.ObjectId(userId),
+  });
+
+  return { id: photo._id.toString(), size: photo.size };
 }
 
 export function zipBudgetError(photoCount: number, totalBytes: number) {

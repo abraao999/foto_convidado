@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../../api/client';
-import SubscriptionAlertBanner from '../../components/SubscriptionAlert';
 import {
   formatDate,
   formatPrice,
@@ -45,7 +44,6 @@ export default function SubscriptionPage() {
       </header>
 
       {error && <p className="status error">{error}</p>}
-      <SubscriptionAlertBanner alert={summary?.alert ?? null} />
 
       <section className="dashboard-grid">
         <article className="dashboard-card">
@@ -60,7 +58,10 @@ export default function SubscriptionPage() {
               <p>Dias restantes: <strong>{sub.daysRemaining ?? 0}</strong></p>
             </>
           ) : (
-            <p>Você não possui acesso ativo.</p>
+            <p>
+              Você não possui acesso ativo. Enquanto a carência não termina,
+              ainda é possível ver e baixar as fotos em Fotos e Download.
+            </p>
           )}
         </article>
       </section>

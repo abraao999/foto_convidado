@@ -12,6 +12,7 @@ import {
 } from '../utils/image-preview.js';
 import {
   buildOwnedGalleryZip,
+  deleteOwnedPhoto,
   getOwnedPhoto,
   getUserPhotoStats,
   initPhotoUpload,
@@ -78,7 +79,9 @@ function photoError(response: Response, error: unknown) {
       ? 504
       : message.includes('grande demais') || message.includes('no máximo')
         ? 413
-        : 400;
+      : message.includes('apagar o arquivo')
+          ? 502
+          : 400;
   return response.status(status).json({ error: message });
 }
 
@@ -232,6 +235,26 @@ router.post(
         expectedUserId: request.user!._id.toString(),
       });
       response.json(result);
+    } catch (error) {
+      photoError(response, error);
+    }
+  }
+);
+
+router.delete(
+  '/:photoId',
+  authenticate,
+  async (request: Request, response: Response) => {
+    try {
+      const result = await deleteOwnedPhoto(
+        request.user!._id.toString(),
+        param(request, 'photoId')
+      );
+      response.json({
+        ok: true,
+        ...result,
+        message: 'Foto excluída.',
+      });
     } catch (error) {
       photoError(response, error);
     }

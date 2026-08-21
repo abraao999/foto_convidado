@@ -6,16 +6,21 @@ import {
   type AdminPaymentRow,
   type AdminUserRow,
 } from '../../api/client';
+import PhotoPagination from '../../components/PhotoPagination';
 import {
   formatDate,
   formatPrice,
+  formatStorage,
 } from '../../types/subscription';
 import { paymentStatusLabel } from '../../types/payment';
 
 type AdminTab = 'overview' | 'users' | 'payments' | 'galleries';
+const ADMIN_PAGE_SIZE = 40;
 
 export default function AdminPage() {
   const [tab, setTab] = useState<AdminTab>('overview');
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
   const [overview, setOverview] = useState<AdminOverview | null>(null);
   const [users, setUsers] = useState<AdminUserRow[]>([]);
   const [payments, setPayments] = useState<AdminPaymentRow[]>([]);
@@ -29,21 +34,32 @@ export default function AdminPage() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
-  async function loadTab(nextTab: AdminTab) {
+  async function loadTab(nextTab: AdminTab, nextPage = 1) {
     setLoading(true);
     setError(null);
     try {
       if (nextTab === 'overview') {
         setOverview(await api.adminOverview());
+        setTotal(0);
       } else if (nextTab === 'users') {
-        const result = await api.adminUsers();
+        const [result, snapshot] = await Promise.all([
+          api.adminUsers(nextPage, ADMIN_PAGE_SIZE),
+          overview ? Promise.resolve(overview) : api.adminOverview(),
+        ]);
+        if (!overview) setOverview(snapshot);
         setUsers(result.users);
+        setTotal(result.total);
+        if (result.page !== nextPage) setPage(result.page);
       } else if (nextTab === 'payments') {
-        const result = await api.adminPayments();
+        const result = await api.adminPayments(nextPage, ADMIN_PAGE_SIZE);
         setPayments(result.payments);
+        setTotal(result.total);
+        if (result.page !== nextPage) setPage(result.page);
       } else {
-        const result = await api.adminGalleries();
+        const result = await api.adminGalleries(nextPage, ADMIN_PAGE_SIZE);
         setGalleries(result.galleries);
+        setTotal(result.total);
+        if (result.page !== nextPage) setPage(result.page);
       }
     } catch (err) {
       setError(
@@ -55,8 +71,13 @@ export default function AdminPage() {
   }
 
   useEffect(() => {
-    void loadTab(tab);
-  }, [tab]);
+    void loadTab(tab, page);
+  }, [tab, page]);
+
+  function changeTab(nextTab: AdminTab) {
+    setPage(1);
+    setTab(nextTab);
+  }
 
   async function runUserAction(
     userId: string,
@@ -68,8 +89,9 @@ export default function AdminPage() {
     try {
       const result = await action();
       setMessage(result.message);
-      const refreshed = await api.adminUsers();
+      const refreshed = await api.adminUsers(page, ADMIN_PAGE_SIZE);
       setUsers(refreshed.users);
+      setTotal(refreshed.total);
       if (tab === 'overview') {
         setOverview(await api.adminOverview());
       }
@@ -97,8 +119,10 @@ export default function AdminPage() {
       setAdminName('');
       setAdminEmail('');
       setAdminPassword('');
-      const refreshed = await api.adminUsers();
+      setPage(1);
+      const refreshed = await api.adminUsers(1, ADMIN_PAGE_SIZE);
       setUsers(refreshed.users);
+      setTotal(refreshed.total);
       setOverview(await api.adminOverview());
     } catch (err) {
       setError(
@@ -115,7 +139,7 @@ export default function AdminPage() {
     <main className="panel-page">
       <header className="panel-header">
         <div>
-          <p className="auth-eyebrow">Etapa 9</p>
+          <p className="auth-eyebrow">Operação</p>
           <h1>Administração</h1>
           <p className="auth-muted">
             Usuários, pagamentos, acessos e galerias da plataforma.
@@ -138,7 +162,7 @@ export default function AdminPage() {
             role="tab"
             aria-selected={tab === id}
             className={`ghost-button ${tab === id ? 'active' : ''}`}
-            onClick={() => setTab(id)}
+            onClick={() => changeTab(id)}
           >
             {label}
           </button>
@@ -182,6 +206,12 @@ export default function AdminPage() {
             <strong>{overview.photos}</strong>
           </article>
         </section>
+        <p className="auth-muted admin-offer-note">
+          Oferta única via ambiente: {formatPrice(overview.offer.priceCents)} ·{' '}
+          {overview.offer.durationDays} dias · {overview.offer.maxGalleries}{' '}
+          galeria(s) · {formatStorage(overview.offer.maxStorageBytes)}. Sem CRUD
+          de planos.
+        </p>
         <div className="admin-purge-row">
           <button
             type="button"
@@ -205,12 +235,17 @@ export default function AdminPage() {
           </button>
           <p className="auth-muted">
             Remove fotos e capas de contas cuja carência após o vencimento já
-            terminou. A limpeza também roda automaticamente no uso do sistema.
+            terminou. O cron diário faz a mesma limpeza automaticamente.
           </p>
         </div>
         </>
       ) : tab === 'users' ? (
         <section className="admin-users-section">
+          <p className="auth-muted">
+            Use <strong>Liberar acesso</strong> para dar o período da plataforma
+            a qualquer usuário, mesmo sem pagamento no Mercado Pago. Se ele já
+            tiver acesso ativo, os dias são somados.
+          </p>
           <form className="admin-create-form" onSubmit={createAdmin}>
             <h2>Novo administrador</h2>
             <p className="auth-muted">
@@ -278,16 +313,18 @@ export default function AdminPage() {
                 const busy = busyUserId === user.id;
                 return (
                   <tr key={user.id}>
-                    <td>{user.name}</td>
-                    <td>{user.email}</td>
-                    <td>{user.role}</td>
-                    <td>{user.status === 'BLOCKED' ? 'Bloqueado' : 'Ativo'}</td>
-                    <td>
+                    <td data-label="Nome">{user.name}</td>
+                    <td data-label="E-mail">{user.email}</td>
+                    <td data-label="Papel">{user.role}</td>
+                    <td data-label="Status">
+                      {user.status === 'BLOCKED' ? 'Bloqueado' : 'Ativo'}
+                    </td>
+                    <td data-label="Acesso">
                       {user.activeSubscription
                         ? `${user.activeSubscription.daysRemaining ?? 0} dia(s)`
                         : '—'}
                     </td>
-                    <td className="admin-actions">
+                    <td className="admin-actions" data-label="Ações">
                       <button
                         type="button"
                         className="ghost-button"
@@ -307,13 +344,22 @@ export default function AdminPage() {
                         type="button"
                         className="ghost-button"
                         disabled={busy}
-                        onClick={() =>
-                          runUserAction(user.id, () =>
+                        onClick={() => {
+                          const days =
+                            overview?.offer.durationDays ?? 90;
+                          if (
+                            !window.confirm(
+                              `Liberar ${days} dias de acesso para ${user.name} sem exigir pagamento?`
+                            )
+                          ) {
+                            return;
+                          }
+                          void runUserAction(user.id, () =>
                             api.adminGrantAccess(user.id)
-                          )
-                        }
+                          );
+                        }}
                       >
-                        Conceder acesso
+                        Liberar acesso
                       </button>
                       <button
                         type="button"
@@ -336,6 +382,12 @@ export default function AdminPage() {
           {users.length === 0 && (
             <p className="auth-muted">Nenhum usuário cadastrado.</p>
           )}
+          <PhotoPagination
+            page={page}
+            totalItems={total}
+            pageSize={ADMIN_PAGE_SIZE}
+            onChange={setPage}
+          />
           </section>
         </section>
       ) : tab === 'payments' ? (
@@ -353,15 +405,15 @@ export default function AdminPage() {
             <tbody>
               {payments.map((payment) => (
                 <tr key={payment.id}>
-                  <td>
+                  <td data-label="Cliente">
                     <strong>{payment.userName ?? '—'}</strong>
                     <br />
                     <span className="auth-muted">{payment.userEmail}</span>
                   </td>
-                  <td>{formatPrice(payment.amountCents)}</td>
-                  <td>{paymentStatusLabel[payment.status]}</td>
-                  <td>{formatDate(payment.paidAt)}</td>
-                  <td>{formatDate(payment.createdAt)}</td>
+                  <td data-label="Valor">{formatPrice(payment.amountCents)}</td>
+                  <td data-label="Status">{paymentStatusLabel[payment.status]}</td>
+                  <td data-label="Pago em">{formatDate(payment.paidAt)}</td>
+                  <td data-label="Criado em">{formatDate(payment.createdAt)}</td>
                 </tr>
               ))}
             </tbody>
@@ -369,6 +421,12 @@ export default function AdminPage() {
           {payments.length === 0 && (
             <p className="auth-muted">Nenhum pagamento registrado.</p>
           )}
+          <PhotoPagination
+            page={page}
+            totalItems={total}
+            pageSize={ADMIN_PAGE_SIZE}
+            onChange={setPage}
+          />
         </section>
       ) : (
         <section className="admin-table-wrap">
@@ -385,15 +443,15 @@ export default function AdminPage() {
             <tbody>
               {galleries.map((gallery) => (
                 <tr key={gallery.id}>
-                  <td>{gallery.title}</td>
-                  <td>
+                  <td data-label="Evento">{gallery.title}</td>
+                  <td data-label="Dono">
                     <strong>{gallery.userName ?? '—'}</strong>
                     <br />
                     <span className="auth-muted">{gallery.userEmail}</span>
                   </td>
-                  <td>{gallery.slug}</td>
-                  <td>{gallery.status}</td>
-                  <td>{formatDate(gallery.createdAt)}</td>
+                  <td data-label="Slug">{gallery.slug}</td>
+                  <td data-label="Status">{gallery.status}</td>
+                  <td data-label="Criada em">{formatDate(gallery.createdAt)}</td>
                 </tr>
               ))}
             </tbody>
@@ -401,6 +459,12 @@ export default function AdminPage() {
           {galleries.length === 0 && (
             <p className="auth-muted">Nenhuma galeria encontrada.</p>
           )}
+          <PhotoPagination
+            page={page}
+            totalItems={total}
+            pageSize={ADMIN_PAGE_SIZE}
+            onChange={setPage}
+          />
         </section>
       )}
     </main>

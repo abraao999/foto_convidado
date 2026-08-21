@@ -178,8 +178,8 @@ export default function DownloadsPage() {
           <h1>Download</h1>
           <p className="auth-muted">
             Baixe as fotos do seu evento em ZIP (até {MAX_ZIP_PHOTOS} por arquivo)
-            ou individualmente. O ZIP é gerado no servidor e o download vai direto
-            do armazenamento. Esta área é exclusiva do dono da galeria.
+            ou individualmente. Com o acesso expirado, o download continua
+            disponível até o fim da carência.
           </p>
         </div>
       </header>

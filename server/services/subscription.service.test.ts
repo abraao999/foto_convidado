@@ -30,7 +30,7 @@ test('alerta expirado avisa sobre remoção de fotos na carência', () => {
     daysUntilMediaPurge: 12,
   });
   assert.match(alert?.message ?? '', /12/);
-  assert.match(alert?.message ?? '', /fotos/i);
+  assert.match(alert?.message ?? '', /baixar/i);
 });
 
 test('alerta expirado após carência confirma remoção', () => {

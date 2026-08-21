@@ -8,13 +8,26 @@ import { serializeUser } from './auth.service.js';
 import { serializeGallery } from './gallery.service.js';
 import { serializePayment } from './payment.service.js';
 import {
+  getAccessOffer,
   grantAccess,
   serializeSubscription,
   syncExpiredSubscriptions,
 } from './subscription.service.js';
 import { hashPassword } from '../utils/password.js';
 
-const LIST_LIMIT = 80;
+export const ADMIN_LIST_PAGE_SIZE = 40;
+
+export function adminListPaging(pageRaw?: number, limitRaw?: number) {
+  const page =
+    typeof pageRaw === 'number' && Number.isFinite(pageRaw) && pageRaw >= 1
+      ? Math.floor(pageRaw)
+      : 1;
+  const limit =
+    typeof limitRaw === 'number' && Number.isFinite(limitRaw) && limitRaw >= 1
+      ? Math.min(80, Math.floor(limitRaw))
+      : ADMIN_LIST_PAGE_SIZE;
+  return { page, limit, skip: (page - 1) * limit };
+}
 
 export async function getAdminOverview() {
   await syncExpiredSubscriptions();
@@ -52,6 +65,7 @@ export async function getAdminOverview() {
     galleries,
     photos,
     revenueCents: revenueAgg[0]?.totalCents ?? 0,
+    offer: getAccessOffer(),
   };
 }
 
@@ -78,10 +92,13 @@ export async function createAdminUser(input: {
   return serializeUser(user);
 }
 
-export async function listAdminUsers() {
+export async function listAdminUsers(paging = adminListPaging()) {
   await syncExpiredSubscriptions();
   const now = new Date();
-  const users = await User.find().sort({ createdAt: -1 }).limit(LIST_LIMIT);
+  const [total, users] = await Promise.all([
+    User.countDocuments(),
+    User.find().sort({ createdAt: -1 }).skip(paging.skip).limit(paging.limit),
+  ]);
 
   const userIds = users.map((user) => user._id);
   const activeSubs = await Subscription.find({
@@ -96,23 +113,28 @@ export async function listAdminUsers() {
     if (!subByUser.has(key)) subByUser.set(key, sub);
   }
 
-  return users.map((user) => {
-    const sub = subByUser.get(user._id.toString());
-    return {
-      ...serializeUser(user),
-      activeSubscription: sub
-        ? serializeSubscription(
-            sub,
-            Math.max(
-              0,
-              Math.ceil(
-                (sub.expiresAt!.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
+  return {
+    users: users.map((user) => {
+      const sub = subByUser.get(user._id.toString());
+      return {
+        ...serializeUser(user),
+        activeSubscription: sub
+          ? serializeSubscription(
+              sub,
+              Math.max(
+                0,
+                Math.ceil(
+                  (sub.expiresAt!.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
+                )
               )
             )
-          )
-        : null,
-    };
-  });
+          : null,
+      };
+    }),
+    total,
+    page: paging.page,
+    limit: paging.limit,
+  };
 }
 
 export async function setUserStatus(input: {
@@ -175,10 +197,14 @@ export async function adminExpireAccess(userId: string) {
   };
 }
 
-export async function listAdminPayments() {
-  const payments = await PaymentModel.find()
-    .sort({ createdAt: -1 })
-    .limit(LIST_LIMIT);
+export async function listAdminPayments(paging = adminListPaging()) {
+  const [total, payments] = await Promise.all([
+    PaymentModel.countDocuments(),
+    PaymentModel.find()
+      .sort({ createdAt: -1 })
+      .skip(paging.skip)
+      .limit(paging.limit),
+  ]);
 
   const userIds = [
     ...new Set(payments.map((payment) => payment.userId.toString())),
@@ -193,21 +219,30 @@ export async function listAdminPayments() {
     ])
   );
 
-  return payments.map((payment) => {
-    const owner = userById.get(payment.userId.toString());
-    return {
-      ...serializePayment(payment),
-      userId: payment.userId.toString(),
-      userName: owner?.name,
-      userEmail: owner?.email,
-    };
-  });
+  return {
+    payments: payments.map((payment) => {
+      const owner = userById.get(payment.userId.toString());
+      return {
+        ...serializePayment(payment),
+        userId: payment.userId.toString(),
+        userName: owner?.name,
+        userEmail: owner?.email,
+      };
+    }),
+    total,
+    page: paging.page,
+    limit: paging.limit,
+  };
 }
 
-export async function listAdminGalleries() {
-  const galleries = await Gallery.find()
-    .sort({ createdAt: -1 })
-    .limit(LIST_LIMIT);
+export async function listAdminGalleries(paging = adminListPaging()) {
+  const [total, galleries] = await Promise.all([
+    Gallery.countDocuments(),
+    Gallery.find()
+      .sort({ createdAt: -1 })
+      .skip(paging.skip)
+      .limit(paging.limit),
+  ]);
 
   const userIds = [
     ...new Set(galleries.map((gallery) => gallery.userId.toString())),
@@ -222,12 +257,17 @@ export async function listAdminGalleries() {
     ])
   );
 
-  return galleries.map((gallery) => {
-    const owner = userById.get(gallery.userId.toString());
-    return {
-      ...serializeGallery(gallery),
-      userName: owner?.name,
-      userEmail: owner?.email,
-    };
-  });
+  return {
+    galleries: galleries.map((gallery) => {
+      const owner = userById.get(gallery.userId.toString());
+      return {
+        ...serializeGallery(gallery),
+        userName: owner?.name,
+        userEmail: owner?.email,
+      };
+    }),
+    total,
+    page: paging.page,
+    limit: paging.limit,
+  };
 }

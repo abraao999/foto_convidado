@@ -116,7 +116,7 @@ export function getSubscriptionAlert(
     if (typeof untilPurge === 'number' && untilPurge > 0) {
       return {
         level: 'expired',
-        message: `Seu acesso expirou. Renove em até ${untilPurge} dia(s) para não perder as fotos da galeria.`,
+        message: `Seu acesso expirou. Você ainda pode ver e baixar as fotos por ${untilPurge} dia(s). Depois disso elas são apagadas. Renove para continuar enviando.`,
       };
     }
     if (untilPurge !== null && untilPurge !== undefined && untilPurge <= 0) {
@@ -127,7 +127,7 @@ export function getSubscriptionAlert(
     }
     return {
       level: 'expired',
-      message: `Seu acesso expirou. Faça um novo pagamento para liberar mais ${platformConfig.accessDurationDays} dias. Após ${platformConfig.publicGalleryGraceDays} dias sem renovação, as fotos são apagadas.`,
+      message: `Seu acesso expirou. Faça um novo pagamento para liberar mais ${platformConfig.accessDurationDays} dias. Enquanto a carência de ${platformConfig.publicGalleryGraceDays} dias não termina, você ainda pode ver e baixar as fotos.`,
     };
   }
 
@@ -153,14 +153,17 @@ export function getSubscriptionAlert(
 }
 
 /**
- * Libera ou renova o acesso depois de pagamento confirmado.
- * Extensão atômica do documento ACTIVE (índice único parcial por usuário).
- * Se dois grants correm juntos sem ACTIVE, um cria e o outro estende.
+ * Libera ou estende o acesso. Não exige pagamento — o admin pode
+ * conceder cortesia; o webhook de pagamento aprovado usa a mesma função.
  */
 export async function grantAccess(
   userId: string,
   session?: ClientSession
 ) {
+  if (!session) {
+    await syncExpiredSubscriptions();
+  }
+
   const now = new Date();
   const days = platformConfig.accessDurationDays;
   const userOid = new Types.ObjectId(userId);
@@ -194,9 +197,29 @@ export async function grantAccess(
     const code = (error as { code?: number }).code;
     if (code !== 11000) throw error;
     const retried = await extendActiveSubscription(userOid, days, now, session);
-    if (!retried) throw error;
+    if (retried) {
+      await clearMediaPurgedAt(userOid, session);
+      return retried;
+    }
+    await Subscription.updateMany(
+      { userId: userOid, status: 'ACTIVE' },
+      { $set: { status: 'EXPIRED', expiresAt: now } },
+      options
+    );
+    const [created] = await Subscription.create(
+      [
+        {
+          userId: userOid,
+          status: 'ACTIVE',
+          accessDaysGranted: days,
+          startsAt: now,
+          expiresAt,
+        },
+      ],
+      options
+    );
     await clearMediaPurgedAt(userOid, session);
-    return retried;
+    return created!;
   }
 }
 
@@ -206,30 +229,23 @@ async function extendActiveSubscription(
   now: Date,
   session?: ClientSession
 ) {
-  return Subscription.findOneAndUpdate(
+  const current = await Subscription.findOne(
     {
       userId,
       status: 'ACTIVE',
       expiresAt: { $gt: now },
     },
-    [
-      {
-        $set: {
-          expiresAt: {
-            $dateAdd: {
-              startDate: '$expiresAt',
-              unit: 'day',
-              amount: days,
-            },
-          },
-          accessDaysGranted: {
-            $add: [{ $ifNull: ['$accessDaysGranted', 0] }, days],
-          },
-        },
-      },
-    ],
-    { new: true, session }
+    null,
+    session ? { session } : undefined
   );
+  if (!current?.expiresAt) return null;
+
+  const nextExpiry = new Date(current.expiresAt);
+  nextExpiry.setDate(nextExpiry.getDate() + days);
+  current.expiresAt = nextExpiry;
+  current.accessDaysGranted = (current.accessDaysGranted ?? 0) + days;
+  await current.save(session ? { session } : undefined);
+  return current;
 }
 
 async function clearMediaPurgedAt(userId: Types.ObjectId, session?: ClientSession) {

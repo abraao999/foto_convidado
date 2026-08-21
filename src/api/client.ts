@@ -1,4 +1,4 @@
-import type { SubscriptionInfo, SubscriptionSummary } from '../types/subscription';
+import type { AccessOffer, SubscriptionInfo, SubscriptionSummary } from '../types/subscription';
 import type { PaymentInfo } from '../types/payment';
 import type { GalleryInfo } from '../types/gallery';
 import type { PhotoInfo, PhotoStats } from '../types/photo';
@@ -179,6 +179,12 @@ export const api = {
       `/api/photos/gallery/${galleryId}/ids`
     ),
 
+  deletePhoto: (photoId: string) =>
+    request<{ ok: boolean; id: string; size: number; message: string }>(
+      `/api/photos/${photoId}`,
+      { method: 'DELETE' }
+    ),
+
   downloadGalleryZip: async (
     galleryId: string,
     photoIds: string[],
@@ -222,7 +228,13 @@ export const api = {
 
   adminOverview: () => request<AdminOverview>('/api/admin/overview'),
 
-  adminUsers: () => request<{ users: AdminUserRow[] }>('/api/admin/users'),
+  adminUsers: (page = 1, limit = 40) =>
+    request<{
+      users: AdminUserRow[];
+      total: number;
+      page: number;
+      limit: number;
+    }>(`/api/admin/users?page=${page}&limit=${limit}`),
 
   adminCreateUser: (body: { name: string; email: string; password: string }) =>
     request<{ user: AuthUser; message: string }>('/api/admin/users', {
@@ -247,11 +259,21 @@ export const api = {
       { method: 'POST' }
     ),
 
-  adminPayments: () =>
-    request<{ payments: AdminPaymentRow[] }>('/api/admin/payments'),
+  adminPayments: (page = 1, limit = 40) =>
+    request<{
+      payments: AdminPaymentRow[];
+      total: number;
+      page: number;
+      limit: number;
+    }>(`/api/admin/payments?page=${page}&limit=${limit}`),
 
-  adminGalleries: () =>
-    request<{ galleries: AdminGalleryRow[] }>('/api/admin/galleries'),
+  adminGalleries: (page = 1, limit = 40) =>
+    request<{
+      galleries: AdminGalleryRow[];
+      total: number;
+      page: number;
+      limit: number;
+    }>(`/api/admin/galleries?page=${page}&limit=${limit}`),
 
   adminPurgeExpiredMedia: () =>
     request<{
@@ -269,6 +291,7 @@ export interface AdminOverview {
   galleries: number;
   photos: number;
   revenueCents: number;
+  offer: AccessOffer;
 }
 
 export interface AdminUserRow extends AuthUser {
