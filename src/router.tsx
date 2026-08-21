@@ -1,5 +1,6 @@
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useParams } from 'react-router-dom';
 import ProtectedRoute from './components/ProtectedRoute';
+import AdminRoute from './components/AdminRoute';
 import { AuthProvider } from './contexts/AuthContext';
 import DashboardLayout from './layouts/DashboardLayout';
 import Login from './pages/auth/Login';
@@ -7,7 +8,7 @@ import Register from './pages/auth/Register';
 import ForgotPassword from './pages/auth/ForgotPassword';
 import ResetPassword from './pages/auth/ResetPassword';
 import DashboardHome from './pages/dashboard/DashboardHome';
-import ComingSoonPage from './pages/dashboard/ComingSoonPage';
+import AdminPage from './pages/dashboard/AdminPage';
 import DownloadsPage from './pages/dashboard/DownloadsPage';
 import EventsPage from './pages/dashboard/EventsPage';
 import PaymentPage from './pages/dashboard/PaymentPage';
@@ -65,11 +66,9 @@ export default function AppRouter() {
             <Route
               path="/admin"
               element={
-                <ComingSoonPage
-                  title="Administração"
-                  description="Gerencie usuários, pagamentos e galerias."
-                  stage="Etapa 9"
-                />
+                <AdminRoute>
+                  <AdminPage />
+                </AdminRoute>
               }
             />
           </Route>

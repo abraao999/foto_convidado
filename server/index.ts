@@ -4,6 +4,7 @@ import express, { type Request, type Response } from 'express';
 import cookieParser from 'cookie-parser';
 import { connectDB } from './db.js';
 import authRoutes from './routes/auth.routes.js';
+import adminRoutes from './routes/admin.routes.js';
 import galleriesRoutes from './routes/galleries.routes.js';
 import paymentsRoutes from './routes/payments.routes.js';
 import photosRoutes from './routes/photos.routes.js';
@@ -37,6 +38,7 @@ app.use(async (_request, response, next) => {
 });
 
 app.use('/api/auth', authRoutes);
+app.use('/api/admin', adminRoutes);
 app.use('/api/galleries', galleriesRoutes);
 app.use('/api/payments', paymentsRoutes);
 app.use('/api/photos', photosRoutes);

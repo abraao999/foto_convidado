@@ -247,6 +247,58 @@ export const api = {
 
   getPayments: () =>
     request<{ payments: PaymentInfo[] }>('/api/payments/me'),
+
+  adminOverview: () => request<AdminOverview>('/api/admin/overview'),
+
+  adminUsers: () => request<{ users: AdminUserRow[] }>('/api/admin/users'),
+
+  adminSetUserStatus: (userId: string, status: 'ACTIVE' | 'BLOCKED') =>
+    request<{ user: AuthUser; message: string }>(
+      `/api/admin/users/${userId}/status`,
+      { method: 'PATCH', body: JSON.stringify({ status }) }
+    ),
+
+  adminGrantAccess: (userId: string) =>
+    request<{ message: string }>(`/api/admin/users/${userId}/grant-access`, {
+      method: 'POST',
+    }),
+
+  adminExpireAccess: (userId: string) =>
+    request<{ message: string; expiredCount: number }>(
+      `/api/admin/users/${userId}/expire-access`,
+      { method: 'POST' }
+    ),
+
+  adminPayments: () =>
+    request<{ payments: AdminPaymentRow[] }>('/api/admin/payments'),
+
+  adminGalleries: () =>
+    request<{ galleries: AdminGalleryRow[] }>('/api/admin/galleries'),
 };
+
+export interface AdminOverview {
+  users: number;
+  blockedUsers: number;
+  activeSubscriptions: number;
+  approvedPayments: number;
+  galleries: number;
+  photos: number;
+  revenueCents: number;
+}
+
+export interface AdminUserRow extends AuthUser {
+  activeSubscription: SubscriptionInfo | null;
+}
+
+export interface AdminPaymentRow extends PaymentInfo {
+  userId: string;
+  userName?: string;
+  userEmail?: string;
+}
+
+export interface AdminGalleryRow extends GalleryInfo {
+  userName?: string;
+  userEmail?: string;
+}
 
 export type { SubscriptionInfo, SubscriptionSummary };
