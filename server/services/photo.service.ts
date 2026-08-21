@@ -13,6 +13,7 @@ import {
 import {
   assembleStoredParts,
   buildPhotoStorageKey,
+  buildPhotoThumbKey,
   buildUploadPartKey,
   buildZipStorageKey,
   deleteFile,
@@ -23,6 +24,12 @@ import {
 } from './r2.service.js';
 import { openStoredFile } from './storage-read.service.js';
 import { hasValidImageSignature } from '../utils/image-signature.js';
+import {
+  createHeicPreview,
+  createWebpThumbnail,
+  isHeicPhoto,
+  streamToBuffer,
+} from '../utils/image-preview.js';
 import { canAcceptGalleryUploads } from './subscription.service.js';
 
 export { hasValidImageSignature };
@@ -43,23 +50,67 @@ const allowedMimeTypes = new Set([
 ]);
 
 const UPLOAD_LOCK_STALE_MS = 90 * 1000;
+const PREVIEW_TTL_SECONDS = 60 * 60;
+const MAX_THUMB_SOURCE_BYTES = 8 * 1024 * 1024;
+export const PHOTO_LIST_PAGE_SIZE = 15;
 
-export function serializePhoto(photo: IPhotoDocument) {
+export function photoListPaging(pageRaw?: number, limitRaw?: number) {
+  const page =
+    typeof pageRaw === 'number' && Number.isFinite(pageRaw) && pageRaw >= 1
+      ? Math.floor(pageRaw)
+      : 1;
+  const limit =
+    typeof limitRaw === 'number' && Number.isFinite(limitRaw) && limitRaw >= 1
+      ? Math.min(50, Math.floor(limitRaw))
+      : PHOTO_LIST_PAGE_SIZE;
+  return { page, limit, skip: (page - 1) * limit };
+}
+
+export async function serializePhoto(photo: IPhotoDocument) {
   const id = photo._id.toString();
-  const isHeic =
-    photo.mimeType === 'image/heic' ||
-    photo.mimeType === 'image/heif' ||
-    /\.heic$|\.heif$/i.test(photo.fileName);
-  const previewQuery = isHeic ? '&format=jpeg' : '';
+  const isHeic = isHeicPhoto(photo.mimeType, photo.fileName);
+  const previewQuery = isHeic && !photo.thumbnailKey ? '&format=jpeg' : '';
+  let thumbnailUrl = `/api/photos/${id}/content?v=${photo.updatedAt.getTime()}${previewQuery}`;
+  const previewKey = photo.thumbnailKey || (!isHeic ? photo.storageKey : undefined);
+  if (previewKey) {
+    try {
+      thumbnailUrl = await getSignedDownloadUrl(previewKey, PREVIEW_TTL_SECONDS);
+    } catch (error) {
+      console.warn('Falha ao assinar URL de preview:', error);
+    }
+  }
   return {
     id,
     galleryId: photo.galleryId.toString(),
     fileName: photo.fileName,
-    thumbnailUrl: `/api/photos/${id}/content?v=${photo.updatedAt.getTime()}${previewQuery}`,
+    thumbnailUrl,
     mimeType: photo.mimeType,
     size: photo.size,
     createdAt: photo.createdAt,
   };
+}
+
+async function maybeWriteThumbnail(photo: IPhotoDocument) {
+  if (!photo.storageKey || photo.size > MAX_THUMB_SOURCE_BYTES) return photo;
+  try {
+    const file = await openStoredFile(photo.storageKey);
+    let source = await streamToBuffer(file.stream);
+    if (isHeicPhoto(photo.mimeType, photo.fileName)) {
+      source = await createHeicPreview(source);
+    }
+    const webp = await createWebpThumbnail(source);
+    const thumbnailKey = buildPhotoThumbKey(photo.galleryId.toString());
+    await uploadFile({
+      storageKey: thumbnailKey,
+      buffer: webp,
+      mimeType: 'image/webp',
+    });
+    photo.thumbnailKey = thumbnailKey;
+    await photo.save();
+  } catch (error) {
+    console.warn(`Falha ao gerar thumbnail (${photo._id.toString()}):`, error);
+  }
+  return photo;
 }
 
 async function ownedGallery(userId: string, galleryId: string) {
@@ -144,12 +195,50 @@ export async function getPublicGalleryUploadInfo(slug: string) {
   return serializePublicGallery(gallery);
 }
 
-export async function listGalleryPhotos(userId: string, galleryId: string) {
+export async function listGalleryPhotos(
+  userId: string,
+  galleryId: string,
+  paging = photoListPaging()
+) {
   await ownedGallery(userId, galleryId);
-  return Photo.find({
+  const filter = {
     userId: new Types.ObjectId(userId),
     galleryId: new Types.ObjectId(galleryId),
-  }).sort({ createdAt: -1 });
+  };
+  const [total, photos] = await Promise.all([
+    Photo.countDocuments(filter),
+    Photo.find(filter)
+      .sort({ createdAt: -1 })
+      .skip(paging.skip)
+      .limit(paging.limit),
+  ]);
+  return {
+    photos: await Promise.all(photos.map((photo) => serializePhoto(photo))),
+    total,
+    page: paging.page,
+    limit: paging.limit,
+  };
+}
+
+export async function listGalleryPhotoIds(
+  userId: string,
+  galleryId: string,
+  max = platformConfig.zipMaxPhotos
+) {
+  await ownedGallery(userId, galleryId);
+  const filter = {
+    userId: new Types.ObjectId(userId),
+    galleryId: new Types.ObjectId(galleryId),
+  };
+  const total = await Photo.countDocuments(filter);
+  const photos = await Photo.find(filter)
+    .sort({ createdAt: -1 })
+    .limit(Math.max(1, max))
+    .select('_id');
+  return {
+    ids: photos.map((photo) => photo._id.toString()),
+    total,
+  };
 }
 
 export async function initPhotoUpload(input: {
@@ -308,6 +397,7 @@ async function finalizeUploadSession(session: {
 
     photo.thumbnailUrl = `/api/photos/${photo._id.toString()}/content`;
     await photo.save();
+    await maybeWriteThumbnail(photo);
 
     claimed.completedStorageKey = session.storageKey;
     claimed.lockedAt = undefined;
@@ -317,7 +407,7 @@ async function finalizeUploadSession(session: {
 
     return {
       complete: true as const,
-      photo: serializePhoto(photo),
+      photo: await serializePhoto(photo),
     };
   } catch (error) {
     await UploadSession.updateOne(

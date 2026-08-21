@@ -29,6 +29,14 @@ async function convertWithHeicConvert(buffer: Buffer) {
   return Buffer.from(converted);
 }
 
+export async function createWebpThumbnail(buffer: Buffer) {
+  return sharp(buffer)
+    .rotate()
+    .resize(720, 720, { fit: 'inside', withoutEnlargement: true })
+    .webp({ quality: 72 })
+    .toBuffer();
+}
+
 export async function createHeicPreview(buffer: Buffer) {
   try {
     return await sharp(buffer)

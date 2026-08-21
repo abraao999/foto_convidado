@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../../api/client';
 import PhotoPagination, {
-  slicePhotoPage,
+  PHOTO_PAGE_SIZE,
 } from '../../components/PhotoPagination';
 import type { GalleryInfo } from '../../types/gallery';
 import type { PhotoInfo } from '../../types/photo';
@@ -13,6 +13,7 @@ export default function DownloadsPage() {
   const [galleries, setGalleries] = useState<GalleryInfo[]>([]);
   const [galleryId, setGalleryId] = useState('');
   const [photos, setPhotos] = useState<PhotoInfo[]>([]);
+  const [totalPhotos, setTotalPhotos] = useState(0);
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
@@ -23,11 +24,6 @@ export default function DownloadsPage() {
   const activeGalleries = useMemo(
     () => galleries.filter((gallery) => gallery.status !== 'ARCHIVED'),
     [galleries]
-  );
-
-  const pagedPhotos = useMemo(
-    () => slicePhotoPage(photos, page),
-    [photos, page]
   );
 
   useEffect(() => {
@@ -53,19 +49,17 @@ export default function DownloadsPage() {
   useEffect(() => {
     if (!galleryId) {
       setPhotos([]);
-      setSelected({});
-      setPage(1);
+      setTotalPhotos(0);
       return;
     }
     setLoading(true);
     setError(null);
-    setMessage(null);
-    setPage(1);
     api
-      .getGalleryPhotos(galleryId)
+      .getGalleryPhotos(galleryId, page, PHOTO_PAGE_SIZE)
       .then((result) => {
         setPhotos(result.photos);
-        setSelected({});
+        setTotalPhotos(result.total);
+        if (result.page !== page) setPage(result.page);
       })
       .catch((err) =>
         setError(
@@ -75,24 +69,20 @@ export default function DownloadsPage() {
         )
       )
       .finally(() => setLoading(false));
-  }, [galleryId]);
-
-  useEffect(() => {
-    if (page !== pagedPhotos.page) setPage(pagedPhotos.page);
-  }, [page, pagedPhotos.page]);
+  }, [galleryId, page]);
 
   const pageSelectedCount = useMemo(
-    () => pagedPhotos.items.filter((photo) => selected[photo.id]).length,
-    [pagedPhotos.items, selected]
-  );
-
-  const selectedPhotos = useMemo(
-    () => photos.filter((photo) => selected[photo.id]),
+    () => photos.filter((photo) => selected[photo.id]).length,
     [photos, selected]
   );
 
-  const allSelected =
-    photos.length > 0 && selectedPhotos.length === photos.length;
+  const selectedIds = useMemo(
+    () => Object.keys(selected).filter((id) => selected[id]),
+    [selected]
+  );
+
+  const zipCap = Math.min(totalPhotos, MAX_ZIP_PHOTOS);
+  const allSelected = zipCap > 0 && selectedIds.length >= zipCap;
 
   function toggle(id: string) {
     setSelected((current) => ({ ...current, [id]: !current[id] }));
@@ -100,11 +90,10 @@ export default function DownloadsPage() {
 
   function toggleAllOnPage() {
     const allOnPage =
-      pagedPhotos.items.length > 0 &&
-      pageSelectedCount === pagedPhotos.items.length;
+      photos.length > 0 && pageSelectedCount === photos.length;
     setSelected((current) => {
       const next = { ...current };
-      for (const photo of pagedPhotos.items) {
+      for (const photo of photos) {
         if (allOnPage) delete next[photo.id];
         else next[photo.id] = true;
       }
@@ -112,36 +101,43 @@ export default function DownloadsPage() {
     });
   }
 
-  function toggleAllInGallery() {
+  async function toggleAllInGallery() {
     if (allSelected) {
       setSelected({});
       return;
     }
-    const next: Record<string, boolean> = {};
-    for (const photo of photos.slice(0, MAX_ZIP_PHOTOS)) {
-      next[photo.id] = true;
-    }
-    setSelected(next);
-    if (photos.length > MAX_ZIP_PHOTOS) {
-      setMessage(
-        `Selecionamos as primeiras ${MAX_ZIP_PHOTOS} fotos (limite do ZIP).`
+    if (!galleryId) return;
+    try {
+      const result = await api.getGalleryPhotoIds(galleryId);
+      const next: Record<string, boolean> = {};
+      for (const id of result.ids) next[id] = true;
+      setSelected(next);
+      if (result.total > result.ids.length) {
+        setMessage(
+          `Selecionamos as primeiras ${result.ids.length} fotos (limite do ZIP).`
+        );
+      }
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'Não foi possível selecionar as fotos.'
       );
     }
   }
 
   function downloadIndividually() {
-    selectedPhotos.forEach((photo, index) => {
+    selectedIds.forEach((id, index) => {
+      const photo = photos.find((item) => item.id === id);
       window.setTimeout(() => {
         const link = document.createElement('a');
-        link.href = `/api/photos/${photo.id}/content?download=1`;
-        link.download = photo.fileName;
+        link.href = `/api/photos/${id}/content?download=1`;
+        link.download = photo?.fileName ?? 'foto.jpg';
         link.click();
       }, index * 400);
     });
   }
 
   async function downloadZip() {
-    if (!galleryId || selectedPhotos.length === 0) return;
+    if (!galleryId || selectedIds.length === 0) return;
     const galleryTitle =
       activeGalleries.find((gallery) => gallery.id === galleryId)?.title ??
       'galeria';
@@ -159,11 +155,11 @@ export default function DownloadsPage() {
     try {
       await api.downloadGalleryZip(
         galleryId,
-        selectedPhotos.map((photo) => photo.id),
+        selectedIds,
         suggestedName
       );
       setMessage(
-        `Download do ZIP iniciado (${selectedPhotos.length} foto(s)). O link vale por 15 minutos.`
+        `Download do ZIP iniciado (${selectedIds.length} foto(s)). O link vale por 15 minutos.`
       );
     } catch (err) {
       setError(
@@ -208,7 +204,11 @@ export default function DownloadsPage() {
               Galeria
               <select
                 value={galleryId}
-                onChange={(event) => setGalleryId(event.target.value)}
+                onChange={(event) => {
+                  setGalleryId(event.target.value);
+                  setPage(1);
+                  setSelected({});
+                }}
                 disabled={zipping}
               >
                 {activeGalleries.map((gallery) => (
@@ -233,7 +233,7 @@ export default function DownloadsPage() {
                   onClick={toggleAllOnPage}
                   disabled={zipping}
                 >
-                  {pageSelectedCount === pagedPhotos.items.length
+                  {pageSelectedCount === photos.length
                     ? 'Limpar página'
                     : 'Selecionar página'}
                 </button>
@@ -251,7 +251,7 @@ export default function DownloadsPage() {
                     zipping ? 'is-progress' : ''
                   }`}
                   onClick={downloadZip}
-                  disabled={zipping || selectedPhotos.length === 0}
+                  disabled={zipping || selectedIds.length === 0}
                   aria-busy={zipping}
                 >
                   {zipping ? (
@@ -260,20 +260,20 @@ export default function DownloadsPage() {
                       <span className="send-button-label">Gerando ZIP…</span>
                     </>
                   ) : (
-                    `Baixar ZIP (${selectedPhotos.length || 0})`
+                    `Baixar ZIP (${selectedIds.length || 0})`
                   )}
                 </button>
                 <button
                   type="button"
                   className="ghost-button"
                   onClick={downloadIndividually}
-                  disabled={zipping || selectedPhotos.length === 0}
+                  disabled={zipping || selectedIds.length === 0}
                 >
                   Baixar individualmente
                 </button>
               </div>
               <section className="public-photo-grid owner-photo-grid">
-                {pagedPhotos.items.map((photo) => (
+                {photos.map((photo) => (
                   <label
                     className={`public-photo selectable ${
                       selected[photo.id] ? 'checked' : ''
@@ -295,8 +295,8 @@ export default function DownloadsPage() {
                 ))}
               </section>
               <PhotoPagination
-                page={pagedPhotos.page}
-                totalItems={photos.length}
+                page={page}
+                totalItems={totalPhotos}
                 onChange={setPage}
               />
             </>

@@ -3,6 +3,7 @@ import test from 'node:test';
 import { uploadPartKeys } from './r2.service.js';
 import {
   hasValidImageSignature,
+  photoListPaging,
   uniqueZipEntryNames,
   zipBudgetError,
   zipFileName,
@@ -60,4 +61,10 @@ test('monta chaves temporárias de upload na ordem das partes', () => {
     'tmp/uploads/abc/part-00002',
     'tmp/uploads/abc/part-00003',
   ]);
+});
+
+test('paginação de fotos usa skip/limit seguros', () => {
+  assert.deepEqual(photoListPaging(2, 15), { page: 2, limit: 15, skip: 15 });
+  assert.equal(photoListPaging(0, 15).page, 1);
+  assert.equal(photoListPaging(1, 999).limit, 50);
 });

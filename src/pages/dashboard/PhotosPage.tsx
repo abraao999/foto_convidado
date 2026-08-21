@@ -8,7 +8,7 @@ import {
 import { Link } from 'react-router-dom';
 import { api } from '../../api/client';
 import PhotoPagination, {
-  slicePhotoPage,
+  PHOTO_PAGE_SIZE,
 } from '../../components/PhotoPagination';
 import { uploadGalleryPhotos } from '../../utils/photoUpload';
 import type { GalleryInfo } from '../../types/gallery';
@@ -27,6 +27,7 @@ export default function PhotosPage() {
   const [galleries, setGalleries] = useState<GalleryInfo[]>([]);
   const [galleryId, setGalleryId] = useState('');
   const [photos, setPhotos] = useState<PhotoInfo[]>([]);
+  const [totalPhotos, setTotalPhotos] = useState(0);
   const [page, setPage] = useState(1);
   const [stats, setStats] = useState<PhotoStats | null>(null);
   const [files, setFiles] = useState<File[]>([]);
@@ -40,11 +41,6 @@ export default function PhotosPage() {
   const activeGalleries = useMemo(
     () => galleries.filter((gallery) => gallery.status !== 'ARCHIVED'),
     [galleries]
-  );
-
-  const pagedPhotos = useMemo(
-    () => slicePhotoPage(photos, page),
-    [photos, page]
   );
 
   useEffect(() => {
@@ -68,25 +64,24 @@ export default function PhotosPage() {
   useEffect(() => {
     if (!galleryId) {
       setPhotos([]);
-      setPage(1);
+      setTotalPhotos(0);
       return;
     }
     setLoading(true);
-    setPage(1);
     api
-      .getGalleryPhotos(galleryId)
-      .then((result) => setPhotos(result.photos))
+      .getGalleryPhotos(galleryId, page, PHOTO_PAGE_SIZE)
+      .then((result) => {
+        setPhotos(result.photos);
+        setTotalPhotos(result.total);
+        if (result.page !== page) setPage(result.page);
+      })
       .catch((err) =>
         setError(
           err instanceof Error ? err.message : 'Não foi possível carregar as fotos.'
         )
       )
       .finally(() => setLoading(false));
-  }, [galleryId]);
-
-  useEffect(() => {
-    if (page !== pagedPhotos.page) setPage(pagedPhotos.page);
-  }, [page, pagedPhotos.page]);
+  }, [galleryId, page]);
 
   function selectFiles(selected: File[]) {
     setError(null);
@@ -123,8 +118,10 @@ export default function PhotosPage() {
       const uploaded = await uploadGalleryPhotos(galleryId, files, ({ percent }) => {
         setUploadPercent(percent);
       });
-      setPhotos((current) => [...uploaded, ...current]);
       setPage(1);
+      const refreshed = await api.getGalleryPhotos(galleryId, 1, PHOTO_PAGE_SIZE);
+      setPhotos(refreshed.photos);
+      setTotalPhotos(refreshed.total);
       const uploadedBytes = uploaded.reduce(
         (total, photo) => total + photo.size,
         0
@@ -192,6 +189,7 @@ export default function PhotosPage() {
                 value={galleryId}
                 onChange={(event) => {
                   setGalleryId(event.target.value);
+                  setPage(1);
                   setFiles([]);
                 }}
               >
@@ -297,7 +295,7 @@ export default function PhotosPage() {
             ) : (
               <>
                 <div className="photo-grid">
-                  {pagedPhotos.items.map((photo) => (
+                  {photos.map((photo) => (
                     <article className="photo-card" key={photo.id}>
                       <img
                         src={photo.thumbnailUrl}
@@ -318,8 +316,8 @@ export default function PhotosPage() {
                   ))}
                 </div>
                 <PhotoPagination
-                  page={pagedPhotos.page}
-                  totalItems={photos.length}
+                  page={page}
+                  totalItems={totalPhotos}
                   onChange={setPage}
                 />
               </>

@@ -164,9 +164,19 @@ export const api = {
     );
   },
 
-  getGalleryPhotos: (galleryId: string) =>
-    request<{ photos: PhotoInfo[] }>(
-      `/api/photos/gallery/${galleryId}`
+  getGalleryPhotos: (galleryId: string, page = 1, limit = 15) =>
+    request<{
+      photos: PhotoInfo[];
+      total: number;
+      page: number;
+      limit: number;
+    }>(
+      `/api/photos/gallery/${galleryId}?page=${page}&limit=${limit}`
+    ),
+
+  getGalleryPhotoIds: (galleryId: string) =>
+    request<{ ids: string[]; total: number }>(
+      `/api/photos/gallery/${galleryId}/ids`
     ),
 
   downloadGalleryZip: async (

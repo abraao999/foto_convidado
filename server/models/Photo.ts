@@ -11,6 +11,8 @@ export interface IPhoto {
   fileName: string;
   /** Chave no Cloudflare R2. */
   storageKey: string;
+  /** Preview WebP no R2; se ausente, a listagem usa o original ou o proxy. */
+  thumbnailKey?: string;
   thumbnailUrl: string;
   mimeType: string;
   size: number;
@@ -36,6 +38,7 @@ const photoSchema = new Schema<IPhotoDocument>(
     },
     fileName: { type: String, required: true, trim: true, maxlength: 255 },
     storageKey: { type: String, required: true, maxlength: 512 },
+    thumbnailKey: { type: String, trim: true, maxlength: 512 },
     thumbnailUrl: { type: String, required: true, maxlength: 2048 },
     mimeType: { type: String, required: true, maxlength: 100 },
     size: { type: Number, required: true, min: 1 },

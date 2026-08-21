@@ -15,8 +15,10 @@ import {
   getOwnedPhoto,
   getUserPhotoStats,
   initPhotoUpload,
+  listGalleryPhotoIds,
   listGalleryPhotos,
-  serializePhoto,
+  PHOTO_LIST_PAGE_SIZE,
+  photoListPaging,
   uploadPhotoChunk,
 } from '../services/photo.service.js';
 import { chunkUpload } from '../utils/upload.js';
@@ -94,11 +96,33 @@ router.get(
   authenticate,
   async (request: Request, response: Response) => {
     try {
-      const photos = await listGalleryPhotos(
+      const page = Number(request.query.page);
+      const limit = Number(request.query.limit);
+      const result = await listGalleryPhotos(
+        request.user!._id.toString(),
+        param(request, 'galleryId'),
+        photoListPaging(
+          Number.isFinite(page) ? page : 1,
+          Number.isFinite(limit) ? limit : PHOTO_LIST_PAGE_SIZE
+        )
+      );
+      response.json(result);
+    } catch (error) {
+      photoError(response, error);
+    }
+  }
+);
+
+router.get(
+  '/gallery/:galleryId/ids',
+  authenticate,
+  async (request: Request, response: Response) => {
+    try {
+      const result = await listGalleryPhotoIds(
         request.user!._id.toString(),
         param(request, 'galleryId')
       );
-      response.json({ photos: photos.map(serializePhoto) });
+      response.json(result);
     } catch (error) {
       photoError(response, error);
     }

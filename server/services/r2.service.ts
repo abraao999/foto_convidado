@@ -74,6 +74,10 @@ export function buildUploadPartKey(sessionToken: string, partNumber: number) {
   return `tmp/uploads/${sessionToken}/part-${String(partNumber).padStart(5, '0')}`;
 }
 
+export function buildPhotoThumbKey(galleryId: string) {
+  return `events/${galleryId}/photos/${randomUUID()}.thumb.webp`;
+}
+
 export function buildZipStorageKey(userId: string, galleryId: string) {
   return `tmp/zips/${userId}/${galleryId}/${randomUUID()}.zip`;
 }

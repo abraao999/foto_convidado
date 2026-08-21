@@ -37,12 +37,17 @@ export async function deleteUserGalleryMedia(userId: string) {
   }
 
   const ownerId = new Types.ObjectId(userId);
-  const photos = await Photo.find({ userId: ownerId }).select('storageKey');
+  const photos = await Photo.find({ userId: ownerId }).select(
+    'storageKey thumbnailKey'
+  );
   let deletedPhotos = 0;
   let deletedCovers = 0;
   let failedObjects = 0;
 
   for (const photo of photos) {
+    if (photo.thumbnailKey) {
+      await deleteStoredObject(photo.thumbnailKey);
+    }
     if (photo.storageKey) {
       const removed = await deleteStoredObject(photo.storageKey);
       if (!removed) {
