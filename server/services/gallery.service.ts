@@ -5,6 +5,13 @@ import {
   type IGalleryDocument,
 } from '../models/Gallery.js';
 import { normalizeSlug } from './profile.service.js';
+import { hasValidImageSignature } from '../utils/image-signature.js';
+import {
+  buildCoverStorageKey,
+  deleteFile,
+  isR2StorageKey,
+  uploadFile,
+} from './r2.service.js';
 
 export interface CreateGalleryInput {
   title: string;
@@ -131,17 +138,45 @@ export async function archiveGallery(userId: string, galleryId: string) {
   return gallery.save();
 }
 
-export async function setGalleryCover(
+export async function replaceGalleryCover(
   userId: string,
   galleryId: string,
-  storageRef: string
+  file: { originalname: string; mimetype: string; buffer: Buffer }
 ) {
   const gallery = await findOwnedGallery(userId, galleryId);
   if (gallery.status === 'ARCHIVED') {
     throw new Error('Uma galeria arquivada não pode ser editada.');
   }
-  gallery.coverPhoto = storageRef;
-  return gallery.save();
+
+  const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'];
+  if (!allowed.includes(file.mimetype) || !hasValidImageSignature(file)) {
+    throw new Error('Escolha uma imagem JPG, PNG, WebP ou HEIC de até 8 MB.');
+  }
+
+  const storageKey = buildCoverStorageKey(
+    galleryId,
+    file.originalname,
+    file.mimetype
+  );
+  await uploadFile({
+    storageKey,
+    buffer: file.buffer,
+    mimeType: file.mimetype,
+  });
+
+  const previous = gallery.coverPhoto;
+  gallery.coverPhoto = storageKey;
+  await gallery.save();
+
+  if (previous && previous !== storageKey && isR2StorageKey(previous)) {
+    try {
+      await deleteFile(previous);
+    } catch (error) {
+      console.warn(`Falha ao apagar capa anterior no R2 (${previous}):`, error);
+    }
+  }
+
+  return gallery;
 }
 
 export async function getOwnedGalleryCover(userId: string, galleryId: string) {

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { uploadPartKeys } from './r2.service.js';
 import {
   hasValidImageSignature,
   uniqueZipEntryNames,
@@ -41,5 +42,13 @@ test('gera nomes únicos para entradas do ZIP', () => {
     'a.jpg',
     'a-2.jpg',
     'b.png',
+  ]);
+});
+
+test('monta chaves temporárias de upload na ordem das partes', () => {
+  assert.deepEqual(uploadPartKeys('abc', 3), [
+    'tmp/uploads/abc/part-00001',
+    'tmp/uploads/abc/part-00002',
+    'tmp/uploads/abc/part-00003',
   ]);
 });

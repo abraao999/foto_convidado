@@ -16,6 +16,10 @@ export interface IUploadSession {
   mimeType: string;
   totalSize: number;
   uploadedBytes: number;
+  /** Galeria pública exige status PUBLISHED no complete. */
+  requirePublished?: boolean;
+  lockedAt?: Date;
+  completingAt?: Date;
   completedStorageKey?: string;
   expiresAt: Date;
   createdAt: Date;
@@ -39,6 +43,9 @@ const uploadSessionSchema = new Schema<IUploadSessionDocument>(
     mimeType: { type: String, required: true, maxlength: 100 },
     totalSize: { type: Number, required: true, min: 1 },
     uploadedBytes: { type: Number, default: 0, min: 0 },
+    requirePublished: { type: Boolean, default: false },
+    lockedAt: { type: Date },
+    completingAt: { type: Date },
     completedStorageKey: { type: String },
     expiresAt: { type: Date, required: true },
   },

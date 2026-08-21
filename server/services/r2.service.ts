@@ -2,7 +2,9 @@ import { randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
 import {
   DeleteObjectCommand,
+  DeleteObjectsCommand,
   GetObjectCommand,
+  ListObjectsV2Command,
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
@@ -104,6 +106,104 @@ export async function uploadFile(input: {
     })
   );
   return { storageKey: input.storageKey };
+}
+
+/** Envia um stream ao R2 sem materializar o arquivo inteiro em memória. */
+export async function uploadFileStream(input: {
+  storageKey: string;
+  body: Readable;
+  mimeType: string;
+  contentLength?: number;
+}) {
+  const { client, bucket } = createR2Client();
+  await client.send(
+    new PutObjectCommand({
+      Bucket: bucket,
+      Key: input.storageKey,
+      Body: input.body,
+      ContentType: input.mimeType,
+      ...(typeof input.contentLength === 'number'
+        ? { ContentLength: input.contentLength }
+        : {}),
+    })
+  );
+  return { storageKey: input.storageKey };
+}
+
+/** Concatena objetos R2 em sequência e grava a chave final. */
+export async function assembleStoredParts(input: {
+  partKeys: string[];
+  storageKey: string;
+  mimeType: string;
+  contentLength: number;
+}) {
+  async function* parts() {
+    for (const key of input.partKeys) {
+      const file = await getObjectStream(key);
+      for await (const chunk of file.stream) {
+        yield chunk;
+      }
+    }
+  }
+
+  await uploadFileStream({
+    storageKey: input.storageKey,
+    body: Readable.from(parts()),
+    mimeType: input.mimeType,
+    contentLength: input.contentLength,
+  });
+}
+
+export function uploadPartKeys(sessionToken: string, partCount: number) {
+  return Array.from({ length: partCount }, (_, index) =>
+    buildUploadPartKey(sessionToken, index + 1)
+  );
+}
+
+export async function deleteExpiredPrefix(input: {
+  prefix: string;
+  olderThan: Date;
+  maxKeys?: number;
+}) {
+  const { client, bucket } = createR2Client();
+  const listed = await client.send(
+    new ListObjectsV2Command({
+      Bucket: bucket,
+      Prefix: input.prefix,
+      MaxKeys: input.maxKeys ?? 80,
+    })
+  );
+  const stale = (listed.Contents ?? []).filter(
+    (item) =>
+      item.Key &&
+      item.LastModified &&
+      item.LastModified.getTime() < input.olderThan.getTime()
+  );
+  const keys = stale
+    .map((item) => item.Key)
+    .filter((key): key is string => Boolean(key));
+  if (keys.length === 0) return { deleted: 0 };
+
+  await client.send(
+    new DeleteObjectsCommand({
+      Bucket: bucket,
+      Delete: {
+        Objects: keys.map((Key) => ({ Key })),
+        Quiet: true,
+      },
+    })
+  );
+  return { deleted: keys.length };
+}
+
+/** Remove partes tmp/uploads deixadas por sessões expiradas ou abortadas. */
+export async function cleanupExpiredUploadParts() {
+  const olderThan = new Date(Date.now() - 45 * 60 * 1000);
+  return deleteExpiredPrefix({
+    prefix: 'tmp/uploads/',
+    olderThan,
+    maxKeys: 80,
+  });
 }
 
 export async function getObjectStream(storageKey: string) {

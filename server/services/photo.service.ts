@@ -9,14 +9,17 @@ import {
   serializePublicGallery,
 } from './gallery.service.js';
 import {
+  assembleStoredParts,
   buildPhotoStorageKey,
   buildUploadPartKey,
   deleteFile,
-  getObjectStream,
   uploadFile,
+  uploadPartKeys,
 } from './r2.service.js';
+import { hasValidImageSignature } from '../utils/image-signature.js';
 import { canAcceptGalleryUploads } from './subscription.service.js';
-import { streamToBuffer } from '../utils/image-preview.js';
+
+export { hasValidImageSignature };
 
 export interface PhotoUpload {
   originalname: string;
@@ -32,6 +35,8 @@ const allowedMimeTypes = new Set([
   'image/heic',
   'image/heif',
 ]);
+
+const UPLOAD_LOCK_STALE_MS = 90 * 1000;
 
 export function serializePhoto(photo: IPhotoDocument) {
   const id = photo._id.toString();
@@ -49,31 +54,6 @@ export function serializePhoto(photo: IPhotoDocument) {
     size: photo.size,
     createdAt: photo.createdAt,
   };
-}
-
-export function hasValidImageSignature(file: PhotoUpload) {
-  const bytes = file.buffer;
-  const isJpeg =
-    bytes.length >= 3 &&
-    bytes[0] === 0xff &&
-    bytes[1] === 0xd8 &&
-    bytes[2] === 0xff;
-  const isPng =
-    bytes.length >= 8 &&
-    bytes.subarray(0, 8).equals(
-      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
-    );
-  const isWebp =
-    bytes.length >= 12 &&
-    bytes.subarray(0, 4).toString('ascii') === 'RIFF' &&
-    bytes.subarray(8, 12).toString('ascii') === 'WEBP';
-  const heicBrand =
-    bytes.length >= 12 ? bytes.subarray(8, 12).toString('ascii') : '';
-  const isHeic =
-    bytes.length >= 12 &&
-    bytes.subarray(4, 8).toString('ascii') === 'ftyp' &&
-    ['heic', 'heix', 'hevc', 'hevx', 'mif1'].includes(heicBrand);
-  return isJpeg || isPng || isWebp || isHeic;
 }
 
 async function ownedGallery(userId: string, galleryId: string) {
@@ -200,110 +180,208 @@ export async function initPhotoUpload(input: {
     mimeType: input.mimeType,
     totalSize: input.size,
     uploadedBytes: 0,
+    requirePublished: Boolean(input.requirePublished),
     expiresAt,
   });
 
   return { sessionToken: token, chunkSize: platformConfig.uploadChunkBytes };
 }
 
-export async function uploadPhotoChunk(input: {
-  sessionToken: string;
-  buffer: Buffer;
-}) {
-  const session = await UploadSession.findOne({
-    token: input.sessionToken,
-    expiresAt: { $gt: new Date() },
-    completedStorageKey: { $exists: false },
-  });
+function staleLockDate(now = new Date()) {
+  return new Date(now.getTime() - UPLOAD_LOCK_STALE_MS);
+}
+
+async function claimUploadSession(token: string) {
+  const now = new Date();
+  const session = await UploadSession.findOneAndUpdate(
+    {
+      token,
+      expiresAt: { $gt: now },
+      completedStorageKey: { $exists: false },
+      $and: [
+        {
+          $or: [
+            { lockedAt: { $exists: false } },
+            { lockedAt: { $lt: staleLockDate(now) } },
+          ],
+        },
+        {
+          $or: [
+            { completingAt: { $exists: false } },
+            { completingAt: { $lt: staleLockDate(now) } },
+          ],
+        },
+      ],
+    },
+    { $set: { lockedAt: now } },
+    { new: true }
+  );
   if (!session?.storageKey) {
+    const existing = await UploadSession.findOne({ token });
+    if (
+      existing?.lockedAt &&
+      existing.lockedAt.getTime() >= staleLockDate(now).getTime()
+    ) {
+      throw new Error('Envio em andamento. Aguarde um instante e tente novamente.');
+    }
     throw new Error('Sessão de envio inválida ou expirada.');
   }
+  return session;
+}
 
-  if (
-    session.uploadedBytes === 0 &&
-    !hasValidImageSignature({
-      originalname: session.fileName,
-      mimetype: session.mimeType,
-      size: session.totalSize,
-      buffer: input.buffer,
-    })
-  ) {
-    throw new Error('O arquivo não contém uma imagem válida.');
-  }
+async function releaseUploadLock(sessionId: Types.ObjectId) {
+  await UploadSession.updateOne(
+    { _id: sessionId, completedStorageKey: { $exists: false } },
+    { $unset: { lockedAt: 1 } }
+  );
+}
 
-  const nextBytes = session.uploadedBytes + input.buffer.length;
-  if (nextBytes > session.totalSize) {
-    throw new Error('O envio ultrapassou o tamanho declarado do arquivo.');
-  }
-
-  const partNumber = session.partCount + 1;
-  await uploadFile({
-    storageKey: buildUploadPartKey(session.token, partNumber),
-    buffer: input.buffer,
-    mimeType: 'application/octet-stream',
-  });
-
-  session.partCount = partNumber;
-  session.uploadedBytes = nextBytes;
-
-  if (session.uploadedBytes < session.totalSize) {
-    await session.save();
-    return {
-      complete: false as const,
-      uploadedBytes: session.uploadedBytes,
-      totalSize: session.totalSize,
-    };
-  }
-
-  const partBuffers: Buffer[] = [];
-  for (let part = 1; part <= session.partCount; part += 1) {
-    const partKey = buildUploadPartKey(session.token, part);
-    const partFile = await getObjectStream(partKey);
-    partBuffers.push(await streamToBuffer(partFile.stream));
-  }
-
-  const fullBuffer = Buffer.concat(partBuffers);
-  if (fullBuffer.length !== session.totalSize) {
-    throw new Error('O arquivo montado não corresponde ao tamanho esperado.');
-  }
-
-  await uploadFile({
-    storageKey: session.storageKey,
-    buffer: fullBuffer,
-    mimeType: session.mimeType,
-  });
-
-  // Confirma que o objeto final existe antes de gravar no MongoDB.
-  await getObjectStream(session.storageKey);
-
-  for (let part = 1; part <= session.partCount; part += 1) {
+async function cleanupSessionParts(token: string, partCount: number) {
+  for (const partKey of uploadPartKeys(token, partCount)) {
     try {
-      await deleteFile(buildUploadPartKey(session.token, part));
+      await deleteFile(partKey);
     } catch (error) {
       console.warn('Falha ao limpar parte temporária do R2:', error);
     }
   }
+}
 
-  const photo = await Photo.create({
-    userId: session.userId,
-    galleryId: session.galleryId,
-    fileName: session.fileName,
-    storageKey: session.storageKey,
-    thumbnailUrl: `/api/photos/pending/content`,
-    mimeType: session.mimeType,
-    size: session.totalSize,
+async function finalizeUploadSession(session: {
+  _id: Types.ObjectId;
+  token: string;
+  userId: Types.ObjectId;
+  galleryId: Types.ObjectId;
+  storageKey: string;
+  partCount: number;
+  fileName: string;
+  mimeType: string;
+  totalSize: number;
+  requirePublished?: boolean;
+}) {
+  const ownerUserId = session.userId.toString();
+  await resolveUploadGallery({
+    ownerUserId,
+    galleryId: session.galleryId.toString(),
+    requirePublished: session.requirePublished,
   });
+  await assertStorageAvailable(ownerUserId, session.totalSize);
 
-  photo.thumbnailUrl = `/api/photos/${photo._id.toString()}/content`;
-  await photo.save();
+  const claimed = await UploadSession.findOneAndUpdate(
+    {
+      _id: session._id,
+      completedStorageKey: { $exists: false },
+      $or: [
+        { completingAt: { $exists: false } },
+        { completingAt: { $lt: staleLockDate() } },
+      ],
+    },
+    { $set: { completingAt: new Date() } },
+    { new: true }
+  );
+  if (!claimed) {
+    throw new Error('Envio em andamento. Aguarde um instante e tente novamente.');
+  }
 
-  session.completedStorageKey = session.storageKey;
-  await session.save();
+  try {
+    await assembleStoredParts({
+      partKeys: uploadPartKeys(session.token, session.partCount),
+      storageKey: session.storageKey,
+      mimeType: session.mimeType,
+      contentLength: session.totalSize,
+    });
 
-  return {
-    complete: true as const,
-    photo: serializePhoto(photo),
-  };
+    const photo = await Photo.create({
+      userId: session.userId,
+      galleryId: session.galleryId,
+      fileName: session.fileName,
+      storageKey: session.storageKey,
+      thumbnailUrl: `/api/photos/pending/content`,
+      mimeType: session.mimeType,
+      size: session.totalSize,
+    });
+
+    photo.thumbnailUrl = `/api/photos/${photo._id.toString()}/content`;
+    await photo.save();
+
+    claimed.completedStorageKey = session.storageKey;
+    claimed.lockedAt = undefined;
+    await claimed.save();
+
+    await cleanupSessionParts(session.token, session.partCount);
+
+    return {
+      complete: true as const,
+      photo: serializePhoto(photo),
+    };
+  } catch (error) {
+    await UploadSession.updateOne(
+      { _id: session._id },
+      { $unset: { completingAt: 1, lockedAt: 1 } }
+    );
+    throw error;
+  }
+}
+
+export async function uploadPhotoChunk(input: {
+  sessionToken: string;
+  buffer: Buffer;
+  expectedUserId?: string;
+}) {
+  const maxChunk = platformConfig.uploadChunkBytes + 512 * 1024;
+  if (input.buffer.length === 0 || input.buffer.length > maxChunk) {
+    throw new Error('Pedaço de envio inválido.');
+  }
+
+  const session = await claimUploadSession(input.sessionToken);
+  try {
+    if (
+      input.expectedUserId &&
+      session.userId.toString() !== input.expectedUserId
+    ) {
+      throw new Error('Sessão de envio inválida ou expirada.');
+    }
+
+    if (session.uploadedBytes >= session.totalSize) {
+      return finalizeUploadSession(session);
+    }
+
+    if (
+      session.uploadedBytes === 0 &&
+      !hasValidImageSignature({ buffer: input.buffer })
+    ) {
+      throw new Error('O arquivo não contém uma imagem válida.');
+    }
+
+    const nextBytes = session.uploadedBytes + input.buffer.length;
+    if (nextBytes > session.totalSize) {
+      throw new Error('O envio ultrapassou o tamanho declarado do arquivo.');
+    }
+
+    const partNumber = session.partCount + 1;
+    await uploadFile({
+      storageKey: buildUploadPartKey(session.token, partNumber),
+      buffer: input.buffer,
+      mimeType: 'application/octet-stream',
+    });
+
+    session.partCount = partNumber;
+    session.uploadedBytes = nextBytes;
+    session.lockedAt = undefined;
+    await session.save();
+
+    if (session.uploadedBytes < session.totalSize) {
+      return {
+        complete: false as const,
+        uploadedBytes: session.uploadedBytes,
+        totalSize: session.totalSize,
+      };
+    }
+
+    return finalizeUploadSession(session);
+  } catch (error) {
+    await releaseUploadLock(session._id);
+    throw error;
+  }
 }
 
 export async function initPublicPhotoUpload(

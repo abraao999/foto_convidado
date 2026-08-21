@@ -263,6 +263,7 @@ router.post(
       const result = await uploadPhotoChunk({
         sessionToken,
         buffer: request.file.buffer,
+        expectedUserId: request.user!._id.toString(),
       });
       response.json(result);
     } catch (error) {

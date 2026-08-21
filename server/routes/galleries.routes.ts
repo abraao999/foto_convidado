@@ -8,15 +8,11 @@ import {
   createGallery,
   getOwnedGalleryCover,
   listUserGalleries,
+  replaceGalleryCover,
   serializeGallery,
-  setGalleryCover,
   setGalleryPublication,
   updateGallery,
 } from '../services/gallery.service.js';
-import {
-  buildCoverStorageKey,
-  uploadFile,
-} from '../services/r2.service.js';
 import { openStoredFile } from '../services/storage-read.service.js';
 import { formatZodError } from '../utils/validation.js';
 
@@ -142,25 +138,14 @@ router.post(
   async (request: Request, response: Response) => {
     if (!request.file) {
       return response.status(400).json({
-        error: 'Escolha uma imagem JPG, PNG ou WebP de até 8 MB.',
+        error: 'Escolha uma imagem JPG, PNG, WebP ou HEIC de até 8 MB.',
       });
     }
     try {
-      const galleryId = galleryIdFrom(request);
-      const storageKey = buildCoverStorageKey(
-        galleryId,
-        request.file.originalname,
-        request.file.mimetype
-      );
-      await uploadFile({
-        storageKey,
-        buffer: request.file.buffer,
-        mimeType: request.file.mimetype,
-      });
-      const gallery = await setGalleryCover(
+      const gallery = await replaceGalleryCover(
         request.user!._id.toString(),
-        galleryId,
-        storageKey
+        galleryIdFrom(request),
+        request.file
       );
       response.json({
         gallery: serializeGallery(gallery),

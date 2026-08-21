@@ -6,6 +6,7 @@ import {
   daysUntilMediaPurge,
   purgeExpiredUserMedia,
 } from './media-cleanup.service.js';
+import { cleanupExpiredUploadParts } from './r2.service.js';
 
 export interface ActiveSubscriptionResult {
   subscription: ISubscriptionDocument;
@@ -24,6 +25,12 @@ export async function syncExpiredSubscriptions(): Promise<number> {
     await purgeExpiredUserMedia({ limit: 3 });
   } catch (error) {
     console.error('Falha ao limpar fotos de assinaturas expiradas:', error);
+  }
+
+  try {
+    await cleanupExpiredUploadParts();
+  } catch (error) {
+    console.error('Falha ao limpar partes temporárias de upload:', error);
   }
 
   return result.modifiedCount;
