@@ -1692,15 +1692,24 @@ footer {
   font-size: 14px;
 }
 
-.whatsapp-button {
-  color: #fff;
-  background: var(--green);
+.admin-actions .whatsapp-button {
+  width: 44px;
+  min-width: 44px;
+  padding: 0;
+  color: var(--green);
+  background: #fff;
   border-color: var(--green);
 }
 
-.whatsapp-button:hover {
-  color: #fff;
-  background: #234a32;
+.admin-actions .whatsapp-button svg {
+  width: 22px;
+  height: 22px;
+  display: block;
+}
+
+.admin-actions .whatsapp-button:hover {
+  color: #234a32;
+  background: #fff;
   border-color: #234a32;
 }
 
@@ -1780,6 +1789,15 @@ footer {
   margin: 0;
 }
 
+.guest-name {
+  display: grid;
+  gap: 2px;
+}
+
+.guest-name small {
+  color: #777970;
+}
+
 @media (max-width: 700px) {
   .admin-table-wrap {
     overflow: visible;
@@ -1801,8 +1819,8 @@ footer {
 
   .admin-table tr {
     display: grid;
-    gap: 2px;
-    padding: 12px 14px;
+    gap: 0;
+    padding: 14px 16px;
     background: #fff;
     border: 1px solid #eee7de;
     border-radius: 10px;
@@ -1810,18 +1828,21 @@ footer {
 
   .admin-table th,
   .admin-table td {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    gap: 12px;
+    display: grid;
+    gap: 4px;
+    justify-items: start;
     padding: 8px 0;
     border: 0;
+    border-bottom: 1px solid #f0ebe4;
     word-break: break-word;
+  }
+
+  .admin-table td:last-child {
+    border-bottom: 0;
   }
 
   .admin-table td::before {
     content: attr(data-label);
-    flex: 0 0 34%;
     color: #777;
     font-size: 11px;
     font-weight: 700;
@@ -1829,16 +1850,51 @@ footer {
     letter-spacing: 0.04em;
   }
 
-  .admin-table td.admin-actions {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: flex-start;
-    padding-top: 10px;
+  .admin-table td:not([data-label])::before,
+  .admin-table td.guest-row-actions::before,
+  .admin-table td.admin-actions::before {
+    content: none;
   }
 
-  .admin-table td.admin-actions::before {
-    flex-basis: 100%;
-    margin-bottom: 4px;
+  .admin-table td.guest-row-actions,
+  .admin-table td.admin-actions {
+    display: block;
+    padding-top: 12px;
+    margin-top: 4px;
+    border-bottom: 0;
+  }
+
+  .guest-row-actions .admin-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-areas:
+      "wa copy"
+      "edit delete";
+    gap: 8px;
+  }
+
+  .guest-row-actions .admin-actions .ghost-button {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .guest-row-actions .admin-actions .whatsapp-button {
+    grid-area: wa;
+    width: 44px;
+    min-width: 44px;
+    justify-self: start;
+  }
+
+  .guest-row-actions .admin-actions .ghost-button:nth-child(2) {
+    grid-area: copy;
+  }
+
+  .guest-row-actions .admin-actions .ghost-button:nth-child(3) {
+    grid-area: edit;
+  }
+
+  .guest-row-actions .admin-actions .ghost-button:nth-child(4) {
+    grid-area: delete;
   }
 
   .admin-actions .ghost-button { min-height: 44px; }
@@ -1847,6 +1903,14 @@ footer {
 }
 
 .planning-metrics { margin-top: 4px; }
+
+.planning-age-metrics {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+@media (max-width: 600px) {
+  .planning-age-metrics { grid-template-columns: 1fr; }
+}
 
 .planning-pill {
   display: inline-flex;

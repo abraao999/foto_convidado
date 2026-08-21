@@ -235,6 +235,26 @@ export default function GuestsPage() {
             </section>
           )}
 
+          {stats && (
+            <section className="metric-grid planning-age-metrics">
+              <article className="metric-card">
+                <span>Adultos</span>
+                <strong>{stats.confirmedAdults}</strong>
+                <small>Confirmados</small>
+              </article>
+              <article className="metric-card">
+                <span>Crianças até 3 anos</span>
+                <strong>{stats.childrenUpTo3}</strong>
+                <small>0 a 3 anos</small>
+              </article>
+              <article className="metric-card">
+                <span>Crianças até 10 anos</span>
+                <strong>{stats.childrenUpTo10}</strong>
+                <small>4 a 10 anos</small>
+              </article>
+            </section>
+          )}
+
           <section className="photo-toolbar">
             <label>
               Evento
@@ -335,6 +355,9 @@ export default function GuestsPage() {
                       }))
                     }
                   />
+                  <small className="auth-muted">
+                    Inclui adultos e crianças.
+                  </small>
                 </label>
                 <label className="form-field-wide">
                   Mensagem do convite
@@ -399,11 +422,10 @@ export default function GuestsPage() {
                   {guests.map((guest) => (
                     <tr key={guest.id}>
                       <td data-label="Nome">
-                        <strong>{guest.fullName}</strong>
-                        <br />
-                        <small>
-                          +{guest.maxCompanions} acompanhante(s)
-                        </small>
+                        <span className="guest-name">
+                          <strong>{guest.fullName}</strong>
+                          <small>+{guest.maxCompanions} acompanhante(s)</small>
+                        </span>
                       </td>
                       <td data-label="Contato">
                         {maskPhone(guest.phone)}
@@ -423,14 +445,25 @@ export default function GuestsPage() {
                           {attendanceStatusLabel[guest.attendanceStatus]}
                         </span>
                       </td>
-                      <td>
+                      <td className="guest-row-actions">
                         <div className="admin-actions">
                           <button
                             type="button"
                             className="ghost-button whatsapp-button"
+                            aria-label="Enviar no WhatsApp"
+                            title="Enviar no WhatsApp"
                             onClick={() => void sendWhatsApp(guest)}
                           >
-                            WhatsApp
+                            <svg
+                              viewBox="0 0 24 24"
+                              aria-hidden="true"
+                              focusable="false"
+                            >
+                              <path
+                                fill="currentColor"
+                                d="M12.04 2c-5.5 0-9.96 4.45-9.96 9.94 0 1.75.46 3.46 1.33 4.97L2 22l5.24-1.37a10 10 0 0 0 4.8 1.22h.01c5.5 0 9.96-4.46 9.96-9.95A9.92 9.92 0 0 0 12.04 2zm5.85 14.2c-.24.68-1.42 1.26-1.97 1.34-.5.07-1.14.1-1.84-.12-.42-.13-.96-.31-1.66-.61-2.92-1.26-4.83-4.2-4.97-4.4-.14-.19-1.16-1.54-1.16-2.94s.73-2.08 1-2.37c.24-.28.53-.35.7-.35h.51c.16 0 .38-.06.59.45.24.58.8 2 .87 2.14.07.14.12.31.02.5-.1.19-.14.31-.28.47-.14.16-.29.36-.42.49-.14.14-.28.29-.12.56.16.28.7 1.16 1.51 1.88 1.04.93 1.91 1.22 2.19 1.36.28.14.44.12.6-.07.16-.19.7-.81.88-1.09.19-.28.37-.23.62-.14.26.09 1.63.77 1.91.91.28.14.47.21.54.33.07.12.07.68-.17 1.36z"
+                              />
+                            </svg>
                           </button>
                           <button
                             type="button"

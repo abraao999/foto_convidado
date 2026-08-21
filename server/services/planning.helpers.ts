@@ -18,17 +18,28 @@ export type GuestListFilter =
   | 'declined'
   | 'no_response';
 
+const MAX_CHILDREN = 10;
+
+export function extraGuests(input: {
+  confirmedCompanionCount: number;
+  childCount?: number;
+  maxCompanions?: number;
+}) {
+  const extras =
+    Math.max(0, input.confirmedCompanionCount) +
+    Math.max(0, input.childCount ?? 0);
+  if (input.maxCompanions == null) return extras;
+  return Math.min(extras, Math.max(0, input.maxCompanions));
+}
+
 export function partySize(input: {
   attendanceStatus: AttendanceStatus;
   confirmedCompanionCount: number;
   childCount?: number;
+  maxCompanions?: number;
 }): number {
   if (input.attendanceStatus !== 'CONFIRMED') return 0;
-  return (
-    1 +
-    Math.max(0, input.confirmedCompanionCount) +
-    Math.max(0, input.childCount ?? 0)
-  );
+  return 1 + extraGuests(input);
 }
 
 export function normalizeChildren(input: {
@@ -36,11 +47,15 @@ export function normalizeChildren(input: {
   bringingChildren?: boolean;
   childCount?: number;
   childAges?: number[];
+  maxChildren?: number;
 }): { bringingChildren: boolean; childCount: number; childAges: number[] } {
   if (!input.attending || !input.bringingChildren) {
     return { bringingChildren: false, childCount: 0, childAges: [] };
   }
-  const childCount = clampCompanions(input.childCount ?? 0, 10);
+  const childCount = clampCompanions(
+    input.childCount ?? 0,
+    Math.min(MAX_CHILDREN, input.maxChildren ?? MAX_CHILDREN)
+  );
   if (childCount === 0) {
     return { bringingChildren: false, childCount: 0, childAges: [] };
   }
@@ -82,6 +97,33 @@ export function applyRsvp(input: {
       input.maxCompanions
     ),
   };
+}
+
+export function allocateRsvpParty(input: {
+  attending: boolean;
+  companionCount?: number;
+  bringingChildren?: boolean;
+  childCount?: number;
+  childAges?: number[];
+  maxCompanions: number;
+}) {
+  const rsvp = applyRsvp({
+    attending: input.attending,
+    companionCount: input.companionCount,
+    maxCompanions: input.maxCompanions,
+  });
+  const remaining =
+    rsvp.attendanceStatus === 'CONFIRMED'
+      ? input.maxCompanions - rsvp.confirmedCompanionCount
+      : 0;
+  const children = normalizeChildren({
+    attending: input.attending,
+    bringingChildren: input.bringingChildren,
+    childCount: input.childCount,
+    childAges: input.childAges,
+    maxChildren: remaining,
+  });
+  return { ...rsvp, ...children };
 }
 
 export function matchesGuestFilter(
@@ -128,11 +170,43 @@ export function guestMongoFilter(filter: GuestListFilter) {
   return {};
 }
 
+export function classifyConfirmedPeople(guest: {
+  attendanceStatus: AttendanceStatus;
+  confirmedCompanionCount: number;
+  childCount?: number;
+  childAges?: number[];
+  maxCompanions?: number;
+}): { adults: number; childrenUpTo3: number; childrenUpTo10: number } {
+  if (guest.attendanceStatus !== 'CONFIRMED') {
+    return { adults: 0, childrenUpTo3: 0, childrenUpTo10: 0 };
+  }
+  const extras = extraGuests(guest);
+  const childCount = Math.min(Math.max(0, guest.childCount ?? 0), extras);
+  const companionAdults = extras - childCount;
+  let childrenUpTo3 = 0;
+  let childrenUpTo10 = 0;
+  let olderChildren = 0;
+  const ages = guest.childAges ?? [];
+  for (let index = 0; index < childCount; index += 1) {
+    const raw = Number(ages[index]);
+    const age = Number.isFinite(raw) ? Math.floor(raw) : 0;
+    if (age <= 3) childrenUpTo3 += 1;
+    else if (age <= 10) childrenUpTo10 += 1;
+    else olderChildren += 1;
+  }
+  return {
+    adults: 1 + companionAdults + olderChildren,
+    childrenUpTo3,
+    childrenUpTo10,
+  };
+}
+
 export function summarizeGuests(
   guests: Array<{
     maxCompanions: number;
     confirmedCompanionCount: number;
     childCount?: number;
+    childAges?: number[];
     attendanceStatus: AttendanceStatus;
     inviteStatus: InviteStatus;
   }>
@@ -143,12 +217,19 @@ export function summarizeGuests(
   let noResponse = 0;
   let confirmedPeople = 0;
   let confirmedCompanions = 0;
+  let confirmedAdults = 0;
+  let childrenUpTo3 = 0;
+  let childrenUpTo10 = 0;
 
   for (const guest of guests) {
     if (guest.attendanceStatus === 'CONFIRMED') {
       confirmed += 1;
-      confirmedCompanions += Math.max(0, guest.confirmedCompanionCount);
+      confirmedCompanions += extraGuests(guest);
       confirmedPeople += partySize(guest);
+      const ages = classifyConfirmedPeople(guest);
+      confirmedAdults += ages.adults;
+      childrenUpTo3 += ages.childrenUpTo3;
+      childrenUpTo10 += ages.childrenUpTo10;
     } else if (guest.attendanceStatus === 'DECLINED') {
       declined += 1;
     } else if (guest.inviteStatus === 'PENDING') {
@@ -166,6 +247,9 @@ export function summarizeGuests(
     noResponse,
     confirmedPeople,
     confirmedCompanions,
+    confirmedAdults,
+    childrenUpTo3,
+    childrenUpTo10,
     expectedPeople: confirmedPeople,
   };
 }

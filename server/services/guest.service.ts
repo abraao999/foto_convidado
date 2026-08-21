@@ -4,11 +4,10 @@ import { Guest, type IGuestDocument } from '../models/Guest.js';
 import { Gallery } from '../models/Gallery.js';
 import { findOwnedGallery } from './gallery.service.js';
 import {
-  applyRsvp,
+  allocateRsvpParty,
   clampCompanions,
   guestMongoFilter,
   invitePublicUrl,
-  normalizeChildren,
   summarizeGuests,
   type AttendanceStatus,
   type GuestListFilter,
@@ -91,7 +90,7 @@ export async function listGuests(
     galleryId: gallery._id,
     userId: gallery.userId,
   }).select(
-    'maxCompanions confirmedCompanionCount childCount attendanceStatus inviteStatus'
+    'maxCompanions confirmedCompanionCount childCount childAges attendanceStatus inviteStatus'
   );
   return {
     guests: guests.map((guest) =>
@@ -162,6 +161,9 @@ export async function updateGuest(
       guest.inviteStatus = 'DECLINED';
       guest.tableId = undefined;
       guest.confirmedCompanionCount = 0;
+      guest.bringingChildren = false;
+      guest.childCount = 0;
+      guest.childAges = [];
     }
   }
   if (typeof input.confirmedCompanionCount === 'number') {
@@ -171,6 +173,16 @@ export async function updateGuest(
     );
   } else if (guest.confirmedCompanionCount > guest.maxCompanions) {
     guest.confirmedCompanionCount = guest.maxCompanions;
+  }
+  const remainingForChildren =
+    guest.maxCompanions - guest.confirmedCompanionCount;
+  if (guest.childCount > remainingForChildren) {
+    guest.childCount = remainingForChildren;
+    guest.childAges = (guest.childAges ?? []).slice(0, remainingForChildren);
+  }
+  if (guest.childCount === 0) {
+    guest.bringingChildren = false;
+    guest.childAges = [];
   }
   await guest.save();
   return serializeGuest(guest, { slug: gallery.slug, includeInviteUrl: true });
@@ -291,23 +303,20 @@ export async function submitPublicRsvp(
   );
   if (!guest) throw new Error('Convite não encontrado.');
 
-  const next = applyRsvp({
+  const next = allocateRsvpParty({
     attending: input.attending,
     companionCount: input.companionCount,
-    maxCompanions: guest.maxCompanions,
-  });
-  const children = normalizeChildren({
-    attending: input.attending,
     bringingChildren: input.bringingChildren,
     childCount: input.childCount,
     childAges: input.childAges,
+    maxCompanions: guest.maxCompanions,
   });
   guest.inviteStatus = next.inviteStatus;
   guest.attendanceStatus = next.attendanceStatus;
   guest.confirmedCompanionCount = next.confirmedCompanionCount;
-  guest.bringingChildren = children.bringingChildren;
-  guest.childCount = children.childCount;
-  guest.childAges = children.childAges;
+  guest.bringingChildren = next.bringingChildren;
+  guest.childCount = next.childCount;
+  guest.childAges = next.childAges;
   guest.rsvpAt = new Date();
   if (next.attendanceStatus !== 'CONFIRMED') {
     guest.tableId = undefined;

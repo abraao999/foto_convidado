@@ -47,15 +47,27 @@ export default function PublicInvitePage() {
         setEvent(result.event);
         setGuest(result.guest);
         setAttending(result.guest.attendanceStatus !== 'DECLINED');
-        setCompanionCount(result.guest.confirmedCompanionCount);
-        setBringingChildren(Boolean(result.guest.bringingChildren));
-        const count = Math.max(1, result.guest.childCount ?? 1);
-        setChildCount(result.guest.bringingChildren ? count : 1);
+        const max = result.guest.maxCompanions;
+        let companions = Math.min(result.guest.confirmedCompanionCount, max);
+        let kids = result.guest.bringingChildren
+          ? Math.max(0, result.guest.childCount ?? 0)
+          : 0;
+        if (companions + kids > max) {
+          kids = Math.max(0, max - companions);
+        }
+        setCompanionCount(companions);
+        setBringingChildren(kids > 0);
+        const count = Math.max(1, kids || 1);
+        setChildCount(kids > 0 ? kids : 1);
         setChildAges(
-          result.guest.bringingChildren
-            ? (result.guest.childAges ?? []).concat(
-                Array(Math.max(0, count - (result.guest.childAges?.length ?? 0))).fill(0)
-              ).slice(0, count)
+          kids > 0
+            ? (result.guest.childAges ?? [])
+                .concat(
+                  Array(
+                    Math.max(0, count - (result.guest.childAges?.length ?? 0))
+                  ).fill(0)
+                )
+                .slice(0, count)
             : [0]
         );
         if (result.guest.attendanceStatus !== 'UNANSWERED') {
@@ -84,12 +96,19 @@ export default function PublicInvitePage() {
     eventForm.preventDefault();
     setError(null);
     try {
+      const adults = attending
+        ? Math.min(companionCount, guest.maxCompanions)
+        : 0;
+      const kids =
+        attending && bringingChildren
+          ? Math.min(childCount, Math.max(0, guest.maxCompanions - adults))
+          : 0;
       const result = await api.submitPublicRsvp(token, {
         attending,
-        companionCount: attending ? companionCount : 0,
-        bringingChildren: attending ? bringingChildren : false,
-        childCount: attending && bringingChildren ? childCount : 0,
-        childAges: attending && bringingChildren ? childAges.slice(0, childCount) : [],
+        companionCount: adults,
+        bringingChildren: kids > 0,
+        childCount: kids,
+        childAges: kids > 0 ? childAges.slice(0, kids) : [],
       });
       setDoneMessage(result.message);
       setGuest((current) =>
@@ -158,23 +177,52 @@ export default function PublicInvitePage() {
                 </button>
               </div>
               {attending && guest.maxCompanions > 0 && (
+                <>
                 <label>
                   Você irá acompanhado?
                   <select
-                    value={companionCount}
-                    onChange={(eventSelect) =>
-                      setCompanionCount(Number(eventSelect.target.value))
-                    }
+                    value={Math.min(
+                      companionCount,
+                      guest.maxCompanions - (bringingChildren ? childCount : 0)
+                    )}
+                    onChange={(eventSelect) => {
+                      const next = Number(eventSelect.target.value);
+                      setCompanionCount(next);
+                      if (bringingChildren) {
+                        const maxKids = guest.maxCompanions - next;
+                        if (maxKids < 1) {
+                          setBringingChildren(false);
+                          setChildCount(1);
+                          setChildAges([0]);
+                        } else if (childCount > maxKids) {
+                          setChildCount(maxKids);
+                          setChildAges((current) => current.slice(0, maxKids));
+                        }
+                      }
+                    }}
                   >
-                    {Array.from({ length: guest.maxCompanions + 1 }, (_, index) => (
-                      <option key={index} value={index}>
-                        {index === 0 ? 'Só eu' : `${index} acompanhante(s)`}
-                      </option>
-                    ))}
+                    {Array.from(
+                      {
+                        length:
+                          guest.maxCompanions -
+                          (bringingChildren ? childCount : 0) +
+                          1,
+                      },
+                      (_, index) => (
+                        <option key={index} value={index}>
+                          {index === 0 ? 'Só eu' : `${index} acompanhante(s)`}
+                        </option>
+                      )
+                    )}
                   </select>
                 </label>
+                <p className="auth-muted">
+                  Crianças entram no limite de {guest.maxCompanions}{' '}
+                  acompanhante(s).
+                </p>
+                </>
               )}
-              {attending && (
+              {attending && guest.maxCompanions > 0 && (
                 <div className="invite-children">
                   <label>
                     Vai levar criança?
@@ -182,37 +230,85 @@ export default function PublicInvitePage() {
                       value={bringingChildren ? 'yes' : 'no'}
                       onChange={(eventSelect) => {
                         const yes = eventSelect.target.value === 'yes';
-                        setBringingChildren(yes);
-                        if (yes && childCount < 1) setChildCount(1);
+                        const remaining = guest.maxCompanions - companionCount;
+                        if (!yes) {
+                          setBringingChildren(false);
+                          return;
+                        }
+                        if (remaining < 1) return;
+                        setBringingChildren(true);
+                        const next = Math.min(Math.max(childCount, 1), remaining);
+                        setChildCount(next);
+                        setChildAges((current) =>
+                          Array.from(
+                            { length: next },
+                            (_, index) => current[index] ?? 0
+                          )
+                        );
                       }}
                     >
                       <option value="no">Não</option>
-                      <option value="yes">Sim</option>
+                      <option
+                        value="yes"
+                        disabled={guest.maxCompanions - companionCount < 1}
+                      >
+                        Sim
+                      </option>
                     </select>
                   </label>
-                  {bringingChildren && (
+                  {guest.maxCompanions - companionCount < 1 && (
+                    <p className="auth-muted">
+                      Para levar criança, diminua o número de acompanhantes.
+                    </p>
+                  )}
+                  {bringingChildren && guest.maxCompanions - companionCount > 0 && (
                     <>
                       <label>
                         Quantas crianças?
                         <select
-                          value={childCount}
+                          value={Math.min(
+                            childCount,
+                            guest.maxCompanions - companionCount
+                          )}
                           onChange={(eventSelect) => {
-                            const next = Number(eventSelect.target.value);
+                            const next = Math.min(
+                              Number(eventSelect.target.value),
+                              guest.maxCompanions - companionCount
+                            );
                             setChildCount(next);
                             setChildAges((current) =>
-                              Array.from({ length: next }, (_, index) => current[index] ?? 0)
+                              Array.from(
+                                { length: next },
+                                (_, index) => current[index] ?? 0
+                              )
                             );
                           }}
                         >
-                          {Array.from({ length: 10 }, (_, index) => (
-                            <option key={index + 1} value={index + 1}>
-                              {index + 1}
-                            </option>
-                          ))}
+                          {Array.from(
+                            {
+                              length: Math.min(
+                                10,
+                                guest.maxCompanions - companionCount
+                              ),
+                            },
+                            (_, index) => (
+                              <option key={index + 1} value={index + 1}>
+                                {index + 1}
+                              </option>
+                            )
+                          )}
                         </select>
                       </label>
                       <div className="invite-ages">
-                        {childAges.slice(0, childCount).map((age, index) => (
+                        {childAges
+                          .slice(
+                            0,
+                            Math.min(
+                              childCount,
+                              guest.maxCompanions - companionCount
+                            )
+                          )
+                          .map((age, index) => (
                           <label key={index}>
                             Idade {index + 1}
                             <input

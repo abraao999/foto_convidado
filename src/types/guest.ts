@@ -45,6 +45,9 @@ export interface GuestStats {
   noResponse: number;
   confirmedPeople: number;
   confirmedCompanions: number;
+  confirmedAdults: number;
+  childrenUpTo3: number;
+  childrenUpTo10: number;
   expectedPeople: number;
 }
 

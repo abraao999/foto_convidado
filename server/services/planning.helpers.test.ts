@@ -2,8 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   applyRsvp,
+  allocateRsvpParty,
   canAssignToTable,
   canPurchaseGift,
+  classifyConfirmedPeople,
   clampCompanions,
   giftStatusFromCounts,
   guestMongoFilter,
@@ -53,6 +55,37 @@ test('crianças no RSVP entram no tamanho do grupo e somem se recusar', () => {
     }),
     4
   );
+  assert.equal(
+    partySize({
+      attendanceStatus: 'CONFIRMED',
+      confirmedCompanionCount: 1,
+      childCount: kids.childCount,
+      maxCompanions: 2,
+    }),
+    3
+  );
+  const capped = allocateRsvpParty({
+    attending: true,
+    companionCount: 2,
+    bringingChildren: true,
+    childCount: 2,
+    childAges: [4, 8],
+    maxCompanions: 2,
+  });
+  assert.equal(capped.confirmedCompanionCount, 2);
+  assert.equal(capped.childCount, 0);
+  assert.equal(capped.bringingChildren, false);
+  const withKids = allocateRsvpParty({
+    attending: true,
+    companionCount: 1,
+    bringingChildren: true,
+    childCount: 2,
+    childAges: [4, 8],
+    maxCompanions: 2,
+  });
+  assert.equal(withKids.confirmedCompanionCount, 1);
+  assert.equal(withKids.childCount, 1);
+  assert.deepEqual(withKids.childAges, [4]);
   assert.deepEqual(
     normalizeChildren({ attending: false, bringingChildren: true, childCount: 2 }),
     { bringingChildren: false, childCount: 0, childAges: [] }
@@ -113,6 +146,32 @@ test('contadores de convidados e pessoas esperadas', () => {
   assert.equal(stats.noResponse, 1);
   assert.equal(stats.confirmedCompanions, 2);
   assert.equal(stats.confirmedPeople, 3);
+  assert.equal(stats.confirmedAdults, 3);
+  assert.equal(stats.childrenUpTo3, 0);
+  assert.equal(stats.childrenUpTo10, 0);
+});
+
+test('cards separam adultos, crianças até 3 e até 10 anos', () => {
+  const ages = classifyConfirmedPeople({
+    attendanceStatus: 'CONFIRMED',
+    confirmedCompanionCount: 1,
+    childCount: 3,
+    childAges: [1, 3, 8, 12],
+    maxCompanions: 4,
+  });
+  assert.equal(ages.adults, 2);
+  assert.equal(ages.childrenUpTo3, 2);
+  assert.equal(ages.childrenUpTo10, 1);
+  const older = classifyConfirmedPeople({
+    attendanceStatus: 'CONFIRMED',
+    confirmedCompanionCount: 0,
+    childCount: 1,
+    childAges: [12],
+    maxCompanions: 1,
+  });
+  assert.equal(older.adults, 2);
+  assert.equal(older.childrenUpTo3, 0);
+  assert.equal(older.childrenUpTo10, 0);
 });
 
 test('quantidade de presente e compra duplicada', () => {
