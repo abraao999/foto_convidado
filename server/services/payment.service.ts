@@ -62,7 +62,7 @@ export async function listUserPayments(userId: string, limit = 50) {
     .limit(Math.min(Math.max(limit, 1), 100));
 }
 
-function mapStatus(status?: string): PaymentStatus {
+export function mapMercadoPagoStatus(status?: string): PaymentStatus {
   switch (status) {
     case 'approved':
       return 'APPROVED';
@@ -77,6 +77,28 @@ function mapStatus(status?: string): PaymentStatus {
     default:
       return 'PENDING';
   }
+}
+
+export type RefundAction = 'none' | 'partial' | 'full';
+
+/**
+ * Reembolso total ou chargeback revoga o acesso.
+ * Reembolso parcial mantém a assinatura (o valor restante cobriu o período).
+ */
+export function resolveRefundAction(input: {
+  amountCents: number;
+  refundedCents: number;
+  providerStatus?: string;
+}): RefundAction {
+  const status = input.providerStatus ?? '';
+  if (status === 'charged_back' || status === 'refunded') return 'full';
+  if (input.refundedCents >= input.amountCents && input.refundedCents > 0) {
+    return 'full';
+  }
+  if (input.refundedCents > 0 && input.refundedCents < input.amountCents) {
+    return 'partial';
+  }
+  return 'none';
 }
 
 /**
@@ -109,44 +131,66 @@ export async function processMercadoPagoPayment(
     throw new Error('Valor ou moeda do pagamento não confere.');
   }
 
-  let mappedStatus = mapStatus(providerPayment.status);
   const refundedCents = Math.round(
     (providerPayment.transaction_amount_refunded ?? 0) * 100
   );
-  if (refundedCents >= localPayment.amountCents) {
-    mappedStatus = 'REFUNDED';
-  }
+  const refundAction = resolveRefundAction({
+    amountCents: localPayment.amountCents,
+    refundedCents,
+    providerStatus: providerPayment.status,
+  });
+
+  let mappedStatus = mapMercadoPagoStatus(providerPayment.status);
+  if (refundAction === 'full') mappedStatus = 'REFUNDED';
 
   const providerFields = {
     externalPaymentId: String(providerPayment.id),
     paymentMethod:
       providerPayment.payment_method_id ??
       providerPayment.payment_type_id,
-    statusDetail: providerPayment.status_detail,
+    statusDetail:
+      refundAction === 'partial'
+        ? `partial_refund:${refundedCents}`
+        : providerPayment.status_detail,
   };
+
+  if (refundAction === 'partial') {
+    localPayment.set(providerFields);
+    if (!localPayment.accessGrantedAt) {
+      localPayment.status = mappedStatus === 'APPROVED' ? 'APPROVED' : localPayment.status;
+    }
+    await localPayment.save();
+    return PaymentModel.findById(localPaymentId);
+  }
 
   if (mappedStatus === 'APPROVED') {
     const session = await mongoose.startSession();
     try {
       await session.withTransaction(async () => {
-        const payment = await PaymentModel.findById(localPaymentId).session(
-          session
+        const payment = await PaymentModel.findOneAndUpdate(
+          {
+            _id: localPayment._id,
+            accessGrantedAt: { $exists: false },
+          },
+          {
+            $set: {
+              ...providerFields,
+              status: 'APPROVED',
+              paidAt: providerPayment.date_approved
+                ? new Date(providerPayment.date_approved)
+                : new Date(),
+              accessGrantedAt: new Date(),
+            },
+          },
+          { new: true, session }
         );
-        if (!payment) throw new Error('Pagamento local não encontrado.');
-        if (payment.accessGrantedAt) return;
+        if (!payment) return;
 
         const subscription = await grantAccess(
           payment.userId.toString(),
           session
         );
-
-        payment.set(providerFields);
-        payment.status = 'APPROVED';
         payment.subscriptionId = subscription._id as Types.ObjectId;
-        payment.paidAt = providerPayment.date_approved
-          ? new Date(providerPayment.date_approved)
-          : new Date();
-        payment.accessGrantedAt = new Date();
         await payment.save({ session });
       });
     } finally {
@@ -156,32 +200,33 @@ export async function processMercadoPagoPayment(
     const session = await mongoose.startSession();
     try {
       await session.withTransaction(async () => {
-        const payment = await PaymentModel.findById(localPaymentId).session(
-          session
+        const payment = await PaymentModel.findOneAndUpdate(
+          {
+            _id: localPayment._id,
+            accessRevokedAt: { $exists: false },
+          },
+          {
+            $set: {
+              ...providerFields,
+              status: 'REFUNDED',
+              accessRevokedAt: new Date(),
+            },
+          },
+          { new: true, session }
         );
-        if (!payment) throw new Error('Pagamento local não encontrado.');
-        if (payment.accessRevokedAt) return;
-
-        payment.set(providerFields);
-        payment.status = 'REFUNDED';
+        if (!payment) return;
 
         if (payment.accessGrantedAt && payment.subscriptionId) {
           await revokeAccess(payment.subscriptionId.toString(), session);
-          payment.accessRevokedAt = new Date();
         }
-
-        await payment.save({ session });
       });
     } finally {
       await session.endSession();
     }
-  } else {
-    // Eventos atrasados não podem rebaixar um pagamento já aprovado.
-    if (!localPayment.accessGrantedAt) {
-      localPayment.set(providerFields);
-      localPayment.status = mappedStatus;
-      await localPayment.save();
-    }
+  } else if (!localPayment.accessGrantedAt) {
+    localPayment.set(providerFields);
+    localPayment.status = mappedStatus;
+    await localPayment.save();
   }
 
   return PaymentModel.findById(localPaymentId);

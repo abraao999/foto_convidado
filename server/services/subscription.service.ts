@@ -171,54 +171,90 @@ export function getSubscriptionAlert(
 
 /**
  * Libera ou renova o acesso depois de pagamento confirmado.
- * Se o usuário ainda tem acesso, os novos dias são somados ao vencimento atual.
- * Caso contrário, a contagem começa agora.
+ * Extensão atômica do documento ACTIVE (índice único parcial por usuário).
+ * Se dois grants correm juntos sem ACTIVE, um cria e o outro estende.
  */
 export async function grantAccess(
   userId: string,
   session?: ClientSession
 ) {
   const now = new Date();
-  const query = Subscription.findOne({
-    userId: new Types.ObjectId(userId),
-    status: 'ACTIVE',
-    expiresAt: { $gt: now },
-  }).sort({ expiresAt: -1 });
-  if (session) query.session(session);
-  const existing = await query;
+  const days = platformConfig.accessDurationDays;
+  const userOid = new Types.ObjectId(userId);
+  const options = session ? { session } : {};
 
-  if (existing?.expiresAt) {
-    const expiresAt = new Date(existing.expiresAt);
-    expiresAt.setDate(expiresAt.getDate() + platformConfig.accessDurationDays);
-    existing.expiresAt = expiresAt;
-    existing.accessDaysGranted =
-      (existing.accessDaysGranted ?? 0) + platformConfig.accessDurationDays;
-    const saved = await existing.save({ session });
-    await User.updateOne(
-      { _id: new Types.ObjectId(userId) },
-      { $unset: { mediaPurgedAt: 1 } },
-      session ? { session } : undefined
-    );
-    return saved;
+  const extended = await extendActiveSubscription(userOid, days, now, session);
+  if (extended) {
+    await clearMediaPurgedAt(userOid, session);
+    return extended;
   }
 
   const expiresAt = new Date(now);
-  expiresAt.setDate(expiresAt.getDate() + platformConfig.accessDurationDays);
+  expiresAt.setDate(expiresAt.getDate() + days);
 
-  const subscription = new Subscription({
-    userId: new Types.ObjectId(userId),
-    status: 'ACTIVE',
-    accessDaysGranted: platformConfig.accessDurationDays,
-    startsAt: now,
-    expiresAt,
-  });
-  const created = await subscription.save({ session });
+  try {
+    const [created] = await Subscription.create(
+      [
+        {
+          userId: userOid,
+          status: 'ACTIVE',
+          accessDaysGranted: days,
+          startsAt: now,
+          expiresAt,
+        },
+      ],
+      options
+    );
+    await clearMediaPurgedAt(userOid, session);
+    return created!;
+  } catch (error) {
+    const code = (error as { code?: number }).code;
+    if (code !== 11000) throw error;
+    const retried = await extendActiveSubscription(userOid, days, now, session);
+    if (!retried) throw error;
+    await clearMediaPurgedAt(userOid, session);
+    return retried;
+  }
+}
+
+async function extendActiveSubscription(
+  userId: Types.ObjectId,
+  days: number,
+  now: Date,
+  session?: ClientSession
+) {
+  return Subscription.findOneAndUpdate(
+    {
+      userId,
+      status: 'ACTIVE',
+      expiresAt: { $gt: now },
+    },
+    [
+      {
+        $set: {
+          expiresAt: {
+            $dateAdd: {
+              startDate: '$expiresAt',
+              unit: 'day',
+              amount: days,
+            },
+          },
+          accessDaysGranted: {
+            $add: [{ $ifNull: ['$accessDaysGranted', 0] }, days],
+          },
+        },
+      },
+    ],
+    { new: true, session }
+  );
+}
+
+async function clearMediaPurgedAt(userId: Types.ObjectId, session?: ClientSession) {
   await User.updateOne(
-    { _id: new Types.ObjectId(userId) },
+    { _id: userId },
     { $unset: { mediaPurgedAt: 1 } },
     session ? { session } : undefined
   );
-  return created;
 }
 
 /**
@@ -229,28 +265,50 @@ export async function revokeAccess(
   subscriptionId: string,
   session?: ClientSession
 ) {
-  const query = Subscription.findById(subscriptionId);
-  if (session) query.session(session);
-  const subscription = await query;
-  if (!subscription?.expiresAt) return null;
-
-  const expiresAt = new Date(subscription.expiresAt);
-  expiresAt.setDate(
-    expiresAt.getDate() - platformConfig.accessDurationDays
+  if (!Types.ObjectId.isValid(subscriptionId)) return null;
+  const days = platformConfig.accessDurationDays;
+  return Subscription.findOneAndUpdate(
+    {
+      _id: new Types.ObjectId(subscriptionId),
+      expiresAt: { $exists: true },
+    },
+    [
+      {
+        $set: {
+          accessDaysGranted: {
+            $max: [
+              0,
+              {
+                $subtract: [
+                  { $ifNull: ['$accessDaysGranted', days] },
+                  days,
+                ],
+              },
+            ],
+          },
+          expiresAt: {
+            $dateSubtract: {
+              startDate: '$expiresAt',
+              unit: 'day',
+              amount: days,
+            },
+          },
+        },
+      },
+      {
+        $set: {
+          status: {
+            $cond: [
+              { $lte: ['$expiresAt', '$$NOW'] },
+              'EXPIRED',
+              '$status',
+            ],
+          },
+        },
+      },
+    ],
+    { new: true, session }
   );
-
-  subscription.accessDaysGranted = Math.max(
-    0,
-    (subscription.accessDaysGranted ?? platformConfig.accessDurationDays) -
-      platformConfig.accessDurationDays
-  );
-  subscription.expiresAt = expiresAt;
-
-  if (expiresAt <= new Date()) {
-    subscription.status = 'EXPIRED';
-  }
-
-  return subscription.save({ session });
 }
 
 export function getAccessOffer() {

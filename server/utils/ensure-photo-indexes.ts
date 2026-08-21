@@ -28,6 +28,15 @@ export async function ensurePhotoIndexes(connection: Connection) {
       { storageKey: 1 },
       { unique: true, sparse: true, name: 'storageKey_1' }
     );
+
+    await connection.collection('subscriptions').createIndex(
+      { userId: 1 },
+      {
+        unique: true,
+        partialFilterExpression: { status: 'ACTIVE' },
+        name: 'userId_active_unique',
+      }
+    );
   } catch (error) {
     console.error('Aviso: não foi possível ajustar índices de photos:', error);
   }

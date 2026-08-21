@@ -32,6 +32,15 @@ const subscriptionSchema = new Schema<ISubscriptionDocument>(
 
 subscriptionSchema.index({ userId: 1, status: 1 });
 subscriptionSchema.index({ userId: 1, expiresAt: -1 });
+/** No máximo uma assinatura ACTIVE por usuário — grants concorrentes estendem este documento. */
+subscriptionSchema.index(
+  { userId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { status: 'ACTIVE' },
+    name: 'userId_active_unique',
+  }
+);
 
 export const Subscription: Model<ISubscriptionDocument> =
   mongoose.models.Subscription ??
