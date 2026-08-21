@@ -124,7 +124,13 @@ export function createSessionToken(user: IUserDocument) {
     sub: user._id.toString(),
     email: user.email,
     role: user.role,
+    tv: user.tokenVersion ?? 0,
   });
+}
+
+/** Invalida cookies JWT emitidos antes desta alteração de senha. */
+function bumpTokenVersion(user: IUserDocument) {
+  user.tokenVersion = (user.tokenVersion ?? 0) + 1;
 }
 
 export async function requestPasswordReset(email: string) {
@@ -161,6 +167,7 @@ export async function resetPasswordWithToken(rawToken: string, newPassword: stri
   if (user.emailVerifiedAt === null) {
     user.emailVerifiedAt = new Date();
   }
+  bumpTokenVersion(user);
   await user.save();
   record.usedAt = new Date();
   await record.save();
@@ -176,6 +183,7 @@ export async function changeUserPassword(userId: string, currentPassword: string
   if (!valid) throw new Error('Senha atual incorreta.');
 
   user.passwordHash = await hashPassword(newPassword);
+  bumpTokenVersion(user);
   await user.save();
   return user;
 }

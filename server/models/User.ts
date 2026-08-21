@@ -24,6 +24,11 @@ export interface IUser {
    * undefined em documentos antigos = tratado como já verificado (compatibilidade).
    */
   emailVerifiedAt?: Date | null;
+  /**
+   * Incrementado ao trocar/resetar senha.
+   * JWTs com versão antiga são rejeitados.
+   */
+  tokenVersion: number;
   /** Quando as fotos foram removidas após expiração + carência. */
   mediaPurgedAt?: Date;
   createdAt: Date;
@@ -54,6 +59,7 @@ const userSchema = new Schema<IUserDocument>(
     role: { type: String, enum: ['USER', 'ADMIN'], default: 'USER' },
     status: { type: String, enum: ['ACTIVE', 'BLOCKED'], default: 'ACTIVE' },
     emailVerifiedAt: { type: Date, default: undefined },
+    tokenVersion: { type: Number, default: 0, min: 0 },
     mediaPurgedAt: { type: Date },
   },
   { timestamps: true }
