@@ -61,15 +61,25 @@ export const mercadoLivreProvider: ProductSearchProvider = {
     );
     url.searchParams.set('q', query);
     url.searchParams.set('limit', '8');
+    const headers: Record<string, string> = {
+      Accept: 'application/json',
+      'User-Agent': 'FotoConvidado/1.0',
+    };
+    const token = process.env.MERCADOLIVRE_ACCESS_TOKEN?.trim();
+    if (token) headers.Authorization = `Bearer ${token}`;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 8000);
     try {
-      const response = await fetch(url, {
-        signal: controller.signal,
-        headers: { Accept: 'application/json' },
-      });
+      const response = await fetch(url, { signal: controller.signal, headers });
+      if (response.status === 401 || response.status === 403) {
+        throw new Error(
+          'O Mercado Livre fechou a busca pública de produtos. Cadastre o presente com o nome, o preço e o link da loja.'
+        );
+      }
       if (!response.ok) {
-        throw new Error('Mercado Livre indisponível.');
+        throw new Error(
+          'Mercado Livre indisponível no momento. Tente de novo em instantes.'
+        );
       }
       const data = (await response.json()) as { results?: MercadoLivreItem[] };
       return mapMercadoLivreResults(data.results ?? []);

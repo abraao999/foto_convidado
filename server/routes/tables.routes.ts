@@ -98,7 +98,7 @@ router.post(
         galleryIdFrom(request),
         parsed.data
       );
-      response.json({ ...result, message: 'Mesas atualizadas.' });
+      response.json({ ...result, message: 'Mesas geradas.' });
     } catch (error) {
       tableError(response, error);
     }

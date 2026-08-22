@@ -46,3 +46,17 @@ export function formatPriceUpdatedAt(value?: string) {
   if (hours === 1) return 'Atualizado há 1 hora';
   return `Atualizado há ${hours} horas`;
 }
+
+export function reaisInputFromCents(cents?: number) {
+  if (cents == null || !Number.isFinite(cents)) return '';
+  return (cents / 100).toFixed(2).replace('.', ',');
+}
+
+export function parseReaisToCents(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  const normalized = trimmed.replace(/\s/g, '').replace(/\./g, '').replace(',', '.');
+  const amount = Number(normalized);
+  if (!Number.isFinite(amount) || amount < 0) return undefined;
+  return Math.round(amount * 100);
+}

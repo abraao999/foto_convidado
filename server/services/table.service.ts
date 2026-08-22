@@ -98,37 +98,25 @@ export async function generateTables(
   const gallery = await ownedGallery(userId, galleryId);
   const count = Math.max(1, Math.min(80, Math.floor(input.count)));
   const seats = Math.max(1, Math.min(40, Math.floor(input.seatsPerTable)));
-  const existing = await EventTable.find({
+
+  await Guest.updateMany(
+    { galleryId: gallery._id, userId: gallery.userId },
+    { $unset: { tableId: 1 } }
+  );
+  await EventTable.deleteMany({
     galleryId: gallery._id,
     userId: gallery.userId,
-  }).sort({ sortOrder: 1, createdAt: 1 });
+  });
 
-  if (existing.length < count) {
-    const docs = [];
-    for (let index = existing.length; index < count; index += 1) {
-      docs.push({
-        galleryId: gallery._id,
-        userId: gallery.userId,
-        name: `Mesa ${index + 1}`,
-        seats,
-        sortOrder: index,
-      });
-    }
-    await EventTable.insertMany(docs);
-  } else if (existing.length > count) {
-    const extra = existing.slice(count);
-    for (const table of extra) {
-      const seated = await Guest.exists({ tableId: table._id });
-      if (seated) {
-        throw new Error(
-          'Não é possível reduzir mesas enquanto houver convidados sentados nas últimas mesas.'
-        );
-      }
-    }
-    await EventTable.deleteMany({
-      _id: { $in: extra.map((table) => table._id) },
-    });
-  }
+  await EventTable.insertMany(
+    Array.from({ length: count }, (_, index) => ({
+      galleryId: gallery._id,
+      userId: gallery.userId,
+      name: `Mesa ${index + 1}`,
+      seats,
+      sortOrder: index,
+    }))
+  );
 
   return listTables(userId, galleryId);
 }
